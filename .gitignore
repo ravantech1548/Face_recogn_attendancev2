@@ -1,0 +1,311 @@
+# Environment Configuration Files
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+.env.test
+
+# Python Configuration
+python/.env
+python/.env.*
+python/venv/
+python/__pycache__/
+python/*.pyc
+python/*.pyo
+python/*.pyd
+python/.Python
+python/env/
+python/venv/
+python/.venv/
+python/pip-log.txt
+python/pip-delete-this-directory.txt
+python/.tox/
+python/.coverage
+python/.pytest_cache/
+python/.mypy_cache/
+python/.dmypy.json
+python/dmypy.json
+
+# Node.js Configuration
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+package-lock.json
+yarn.lock
+
+# Frontend Build Files
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.env
+frontend/.env.local
+frontend/.env.development
+frontend/.env.production
+frontend/.env.staging
+frontend/.env.test
+
+# Backend Build Files
+backend/dist/
+backend/build/
+backend/.env
+backend/.env.local
+backend/.env.development
+backend/.env.production
+backend/.env.staging
+backend/.env.test
+
+# Uploaded Images and Files
+backend/uploads/
+backend/uploads/faces/
+backend/uploads/attendance/
+frontend/uploads/
+frontend/uploads/faces/
+frontend/uploads/attendance/
+uploads/
+uploads/faces/
+uploads/attendance/
+
+# Log Files
+*.log
+backend/server.log
+python/recognizer.log
+frontend/frontend.log
+logs/
+log/
+
+# SSL Certificates and Keys
+ssl/
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+
+# Database Files
+*.db
+*.sqlite
+*.sqlite3
+database/
+db/
+
+# Temporary Files
+temp/
+tmp/
+.tmp/
+.temp/
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Test Files
+test_*.py
+test_*.js
+test_*.html
+*_test.py
+*_test.js
+tests/
+test/
+
+# Coverage Reports
+coverage/
+.nyc_output/
+.coverage
+htmlcov/
+
+# Runtime Data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Face Recognition Models (large files)
+*.dat
+*.model
+*.weights
+
+# Configuration files that might contain sensitive data
+config.json
+settings.json
+secrets.json
+credentials.json
