@@ -1,7 +1,24 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from 'react-query'
-import { Container, Typography, TextField, Button, Box, Paper, Grid, Alert, Avatar } from '@mui/material'
+import { 
+  Container, 
+  Typography, 
+  TextField, 
+  Button, 
+  Box, 
+  Paper, 
+  Grid, 
+  Alert, 
+  Avatar,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Switch,
+  FormControlLabel,
+  Divider
+} from '@mui/material'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 import { useForm } from 'react-hook-form'
@@ -20,6 +37,16 @@ export default function AddStaff() {
   const [createLogin, setCreateLogin] = useState(false)
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  
+  // New work-related fields
+  const [workStatus, setWorkStatus] = useState('Full-time')
+  const [manager, setManager] = useState('')
+  const [workFromHomeEnabled, setWorkFromHomeEnabled] = useState(false)
+  const [workStartTime, setWorkStartTime] = useState('09:15')
+  const [workEndTime, setWorkEndTime] = useState('17:45')
+  const [breakTimeMinutes, setBreakTimeMinutes] = useState(30)
+  const [supervisorName, setSupervisorName] = useState('')
+  const [projectCode, setProjectCode] = useState('')
 
   const { data: staffData, isLoading } = useQuery(
     ['staff', staffId],
@@ -35,6 +62,16 @@ export default function AddStaff() {
       setValue('designation', staffData.designation)
       setValue('department', staffData.department)
       if (staffData.face_image_path) setPreview(`${API_BASE_URL}/${staffData.face_image_path}`)
+      
+      // Set new work-related fields
+      setWorkStatus(staffData.work_status || 'Full-time')
+      setManager(staffData.manager || '')
+      setWorkFromHomeEnabled(staffData.work_from_home_enabled || false)
+      setWorkStartTime(staffData.work_start_time ? staffData.work_start_time.slice(0, 5) : '09:15')
+      setWorkEndTime(staffData.work_end_time ? staffData.work_end_time.slice(0, 5) : '17:45')
+      setBreakTimeMinutes(staffData.break_time_minutes || 30)
+      setSupervisorName(staffData.supervisor_name || '')
+      setProjectCode(staffData.project_code || '')
     }
   }, [staffData, isEditing, setValue])
 
@@ -70,6 +107,17 @@ export default function AddStaff() {
     formData.append('email', data.email)
     formData.append('designation', data.designation)
     formData.append('department', data.department)
+    
+    // Add new work-related fields
+    formData.append('workStatus', workStatus)
+    formData.append('manager', manager)
+    formData.append('workFromHomeEnabled', workFromHomeEnabled)
+    formData.append('workStartTime', workStartTime + ':00')
+    formData.append('workEndTime', workEndTime + ':00')
+    formData.append('breakTimeMinutes', breakTimeMinutes)
+    formData.append('supervisorName', supervisorName)
+    formData.append('projectCode', projectCode)
+    
     if (selectedFile) formData.append('faceImage', selectedFile)
     mutation.mutate(formData, {
       onSuccess: async () => {
@@ -119,6 +167,108 @@ export default function AddStaff() {
             <Grid item xs={12} sm={6}>
               <TextField fullWidth label="Department" {...register('department', { required: true })} error={Boolean(errors.department)} helperText={errors.department && 'Required'} />
             </Grid>
+            
+            {/* Work-related fields section */}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }}>
+                <Typography variant="h6" color="primary">Work Information</Typography>
+              </Divider>
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Work Status</InputLabel>
+                <Select
+                  value={workStatus}
+                  label="Work Status"
+                  onChange={(e) => setWorkStatus(e.target.value)}
+                >
+                  <MenuItem value="Full-time">Full-time</MenuItem>
+                  <MenuItem value="Part-time">Part-time</MenuItem>
+                  <MenuItem value="Contract">Contract</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <TextField 
+                fullWidth 
+                label="Manager" 
+                value={manager}
+                onChange={(e) => setManager(e.target.value)}
+                placeholder="Manager's full name"
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <TextField 
+                fullWidth 
+                label="Supervisor Name" 
+                value={supervisorName}
+                onChange={(e) => setSupervisorName(e.target.value)}
+                placeholder="Supervisor's full name"
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <TextField 
+                fullWidth 
+                label="Project Code" 
+                value={projectCode}
+                onChange={(e) => setProjectCode(e.target.value)}
+                placeholder="Project or department code"
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={workFromHomeEnabled}
+                    onChange={(e) => setWorkFromHomeEnabled(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Work From Home Enabled"
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Break Time</InputLabel>
+                <Select
+                  value={breakTimeMinutes}
+                  label="Break Time"
+                  onChange={(e) => setBreakTimeMinutes(e.target.value)}
+                >
+                  <MenuItem value={30}>30 minutes</MenuItem>
+                  <MenuItem value={60}>1 hour</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Work Start Time"
+                type="time"
+                value={workStartTime}
+                onChange={(e) => setWorkStartTime(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Work End Time"
+                type="time"
+                value={workEndTime}
+                onChange={(e) => setWorkEndTime(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            
             <Grid item xs={12}>
               <Button variant="outlined" component="label">
                 Choose Face Image

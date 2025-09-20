@@ -15,6 +15,7 @@ import Navbar from './components/Navbar'
 import { AuthProvider } from './context/AuthContext'
 import AttendanceReport from './components/AttendanceReport'
 import AdminFaceAttendance from './components/AdminFaceAttendance'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const queryClient = new QueryClient()
 
@@ -41,7 +42,11 @@ export default function App() {
               <Route path="/staff/edit/:staffId" element={<AdminRoute component={AddStaff} />} />
               <Route
                 path="/attendance"
-                element={<ProtectedRoute component={AttendanceReport} />}
+                element={
+                  <ErrorBoundary>
+                    <ProtectedRoute component={AttendanceReport} />
+                  </ErrorBoundary>
+                }
               />
               <Route
                 path="/attendance/face"

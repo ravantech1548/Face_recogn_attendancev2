@@ -229,7 +229,56 @@ router.get('/', auth, async (req, res) => {
       `SELECT a.attendance_id, a.staff_id, a.check_in_time, a.check_out_time, a.date, a.status,
               a.created_at, a.check_in_face_image_path, a.check_out_face_image_path,
               a.check_in_confidence_score, a.check_out_confidence_score,
-              s.full_name, s.department
+              a.attendance_notes, a.late_arrival_minutes, a.early_departure_minutes,
+              a.break_time_duration, a.work_from_home,
+              s.full_name, s.department, s.designation, s.work_status, s.manager_name,
+              s.project_code, s.supervisor_name,
+              CASE 
+                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
+                  CASE 
+                    WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                      EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
+                    ELSE
+                      EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
+                  END
+                ELSE NULL
+              END as total_hours,
+              CASE 
+                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
+                  CASE 
+                    WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                      CASE 
+                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 <= 8.25 THEN
+                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
+                        ELSE 8.25
+                      END
+                    ELSE
+                      CASE 
+                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 <= 8.25 THEN
+                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
+                        ELSE 8.25
+                      END
+                  END
+                ELSE NULL
+              END as day_hours,
+              CASE 
+                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
+                  CASE 
+                    WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                      CASE 
+                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 > 8.25 THEN
+                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 - 8.25
+                        ELSE 0
+                      END
+                    ELSE
+                      CASE 
+                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 8.25 THEN
+                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 8.25
+                        ELSE 0
+                      END
+                  END
+                ELSE NULL
+              END as overtime_hours
        FROM attendance a
        JOIN staff s ON s.staff_id = a.staff_id
        ${where}
@@ -339,7 +388,56 @@ router.get('/export', auth, async (req, res) => {
       SELECT a.attendance_id, a.staff_id, a.check_in_time, a.check_out_time, a.date, a.status,
              a.created_at, a.check_in_face_image_path, a.check_out_face_image_path,
              a.check_in_confidence_score, a.check_out_confidence_score,
-             s.full_name, s.department, s.designation, s.email
+             a.attendance_notes, a.late_arrival_minutes, a.early_departure_minutes,
+             a.break_time_duration, a.work_from_home,
+             s.full_name, s.department, s.designation, s.email, s.work_status,
+             s.manager_name, s.project_code, s.supervisor_name,
+             CASE 
+               WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
+                 CASE 
+                   WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                     EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
+                   ELSE
+                     EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
+                 END
+               ELSE NULL
+             END as total_hours,
+             CASE 
+               WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
+                 CASE 
+                   WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                     CASE 
+                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 <= 8.25 THEN
+                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
+                       ELSE 8.25
+                     END
+                   ELSE
+                     CASE 
+                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 <= 8.25 THEN
+                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
+                       ELSE 8.25
+                     END
+                   END
+               ELSE NULL
+             END as day_hours,
+             CASE 
+               WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
+                 CASE 
+                   WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                     CASE 
+                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 > 8.25 THEN
+                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 - 8.25
+                       ELSE 0
+                     END
+                   ELSE
+                     CASE 
+                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 8.25 THEN
+                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 8.25
+                       ELSE 0
+                     END
+                   END
+               ELSE NULL
+             END as overtime_hours
       FROM attendance a
       JOIN staff s ON s.staff_id = a.staff_id
     `;
@@ -400,8 +498,20 @@ router.get('/export', auth, async (req, res) => {
         'Department': record.department,
         'Designation': record.designation,
         'Email': record.email,
+        'Work Status': record.work_status || '',
+        'Manager Name': record.manager_name || '',
+        'Supervisor Name': record.supervisor_name || '',
+        'Project Code': record.project_code || '',
         'Check In Time': record.check_in_time ? new Date(record.check_in_time).toLocaleString() : '',
         'Check Out Time': record.check_out_time ? new Date(record.check_out_time).toLocaleString() : '',
+        'Total Hours': record.total_hours ? `${record.total_hours.toFixed(2)} hrs` : '',
+        'Day Hours': record.day_hours ? `${record.day_hours.toFixed(2)} hrs` : '',
+        'Overtime Hours': record.overtime_hours ? `${record.overtime_hours.toFixed(2)} hrs` : '',
+        'Late Arrival (min)': record.late_arrival_minutes || 0,
+        'Early Departure (min)': record.early_departure_minutes || 0,
+        'Break Time (min)': record.break_time_duration || 0,
+        'Work From Home': record.work_from_home ? 'Yes' : 'No',
+        'Attendance Notes': record.attendance_notes || '',
         'Status': record.status,
         'Check In Confidence': record.check_in_confidence_score ? `${(record.check_in_confidence_score * 100).toFixed(1)}%` : '',
         'Check Out Confidence': record.check_out_confidence_score ? `${(record.check_out_confidence_score * 100).toFixed(1)}%` : '',
@@ -430,8 +540,20 @@ router.get('/export', auth, async (req, res) => {
         'Department': record.department,
         'Designation': record.designation,
         'Email': record.email,
+        'Work Status': record.work_status || '',
+        'Manager Name': record.manager_name || '',
+        'Supervisor Name': record.supervisor_name || '',
+        'Project Code': record.project_code || '',
         'Check In Time': record.check_in_time ? new Date(record.check_in_time).toLocaleString() : '',
         'Check Out Time': record.check_out_time ? new Date(record.check_out_time).toLocaleString() : '',
+        'Total Hours': record.total_hours ? `${record.total_hours.toFixed(2)} hrs` : '',
+        'Day Hours': record.day_hours ? `${record.day_hours.toFixed(2)} hrs` : '',
+        'Overtime Hours': record.overtime_hours ? `${record.overtime_hours.toFixed(2)} hrs` : '',
+        'Late Arrival (min)': record.late_arrival_minutes || 0,
+        'Early Departure (min)': record.early_departure_minutes || 0,
+        'Break Time (min)': record.break_time_duration || 0,
+        'Work From Home': record.work_from_home ? 'Yes' : 'No',
+        'Attendance Notes': record.attendance_notes || '',
         'Status': record.status,
         'Check In Confidence': record.check_in_confidence_score ? `${(record.check_in_confidence_score * 100).toFixed(1)}%` : '',
         'Check Out Confidence': record.check_out_confidence_score ? `${(record.check_out_confidence_score * 100).toFixed(1)}%` : '',

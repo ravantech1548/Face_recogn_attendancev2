@@ -37,8 +37,38 @@ import toast from 'react-hot-toast'
 import API_BASE_URL from '../config/api'
 
 export default function AttendanceReport() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
+  
+  
+  // Show loading while authentication is being checked
+  if (authLoading) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 3 }}>
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="h6">Loading...</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Checking authentication status...
+          </Typography>
+        </Paper>
+      </Container>
+    )
+  }
+  
+  // Show error if no user
+  if (!user) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 3 }}>
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="h6" color="error">Authentication Required</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Please log in to access the attendance report.
+          </Typography>
+        </Paper>
+      </Container>
+    )
+  }
+  
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [staffIdFilter, setStaffIdFilter] = useState('')
@@ -54,6 +84,11 @@ export default function AttendanceReport() {
   const { data: staffList } = useQuery('staff', async () => {
     const res = await axios.get(`${API_BASE_URL}/api/staff`)
     return res.data
+  }, {
+    onError: (error) => {
+      console.error('Staff query error:', error)
+      toast.error('Failed to load staff data: ' + (error.response?.data?.message || error.message))
+    }
   })
 
   // Get user's staff_id for normal users
@@ -66,7 +101,13 @@ export default function AttendanceReport() {
       })
       return res.data.staff_id
     },
-    { enabled: user?.role !== 'admin' && !!user?.userId }
+    { 
+      enabled: user?.role !== 'admin' && !!user?.userId,
+      onError: (error) => {
+        console.error('User staff ID query error:', error)
+        toast.error('Failed to load user data: ' + (error.response?.data?.message || error.message))
+      }
+    }
   )
 
   // Auto-set staff filter for normal users
@@ -105,11 +146,23 @@ export default function AttendanceReport() {
     return params
   }, [startDate, endDate, staffIdFilter, dateFilter])
 
-  const { data: attendance, isLoading, refetch } = useQuery(
+  const { data: attendance, isLoading, refetch, error } = useQuery(
     ['attendance', queryParams],
     async () => {
       const res = await axios.get(`${API_BASE_URL}/api/attendance`, { params: queryParams })
       return res.data
+    },
+    {
+      onError: (error) => {
+        console.error('Attendance query error:', error)
+        console.error('Error details:', {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status,
+          config: error.config
+        })
+        toast.error('Failed to load attendance data: ' + (error.response?.data?.message || error.message))
+      },
     }
   )
 
@@ -238,6 +291,7 @@ export default function AttendanceReport() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 3 }}>
+      
       {user?.role === 'admin' && (
         <Paper sx={{ p: 2, mb: 2 }}>
           <Typography variant="h6" gutterBottom>Attendance Actions</Typography>
@@ -444,6 +498,95 @@ export default function AttendanceReport() {
         </Box>
         <Divider sx={{ mb: 2 }} />
 
+        {/* Error Display */}
+        {error && (
+          <Box sx={{ mb: 2, p: 2, backgroundColor: 'error.light', borderRadius: 2 }}>
+            <Typography variant="h6" color="error.dark" gutterBottom>
+              Error Loading Data
+            </Typography>
+            <Typography variant="body2" color="error.dark">
+              {error.response?.data?.message || error.message || 'An unknown error occurred'}
+            </Typography>
+            <Button 
+              variant="contained" 
+              color="error" 
+              onClick={() => refetch()}
+              sx={{ mt: 1 }}
+            >
+              Retry
+            </Button>
+          </Box>
+        )}
+
+        {/* Summary Statistics */}
+        {attendance && attendance.length > 0 && (
+          <Box sx={{ mb: 3, p: 2, backgroundColor: 'grey.50', borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom>Summary Statistics</Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={2}>
+                <Box sx={{ textAlign: 'center', p: 1 }}>
+                  <Typography variant="h4" color="primary">
+                    {attendance.filter(a => a.total_hours).length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Days Worked
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <Box sx={{ textAlign: 'center', p: 1 }}>
+                  <Typography variant="h4" color="success.main">
+                    {attendance.reduce((sum, a) => sum + (parseFloat(a.total_hours) || 0), 0).toFixed(1)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Total Hours
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <Box sx={{ textAlign: 'center', p: 1 }}>
+                  <Typography variant="h4" color="success.main">
+                    {attendance.reduce((sum, a) => sum + (parseFloat(a.day_hours) || 0), 0).toFixed(1)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Regular Hours
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <Box sx={{ textAlign: 'center', p: 1 }}>
+                  <Typography variant="h4" color="warning.main">
+                    {attendance.reduce((sum, a) => sum + (parseFloat(a.overtime_hours) || 0), 0).toFixed(1)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Overtime Hours
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <Box sx={{ textAlign: 'center', p: 1 }}>
+                  <Typography variant="h4" color="error.main">
+                    {attendance.reduce((sum, a) => sum + (parseInt(a.late_arrival_minutes) || 0), 0)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Late Minutes
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={2}>
+                <Box sx={{ textAlign: 'center', p: 1 }}>
+                  <Typography variant="h4" color="info.main">
+                    {attendance.filter(a => a.work_from_home).length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    WFH Days
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+          </Box>
+        )}
+
         <TableContainer>
           <Table>
             <TableHead>
@@ -451,23 +594,127 @@ export default function AttendanceReport() {
                 <TableCell>Date</TableCell>
                 <TableCell>Staff</TableCell>
                 <TableCell>Department</TableCell>
+                <TableCell>Work Status</TableCell>
+                <TableCell>Manager</TableCell>
+                <TableCell>Project Code</TableCell>
                 <TableCell>Check In</TableCell>
                 <TableCell>Check Out</TableCell>
+                <TableCell>Total Hours</TableCell>
+                <TableCell>Day Hours</TableCell>
+                <TableCell>Overtime</TableCell>
+                <TableCell>Late Arrival</TableCell>
+                <TableCell>Early Departure</TableCell>
+                <TableCell>Break Time</TableCell>
+                <TableCell>WFH</TableCell>
+                <TableCell>Notes</TableCell>
                 <TableCell>Face Captures</TableCell>
                 <TableCell>Status</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={7}>Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={17}>Loading...</TableCell></TableRow>
               ) : attendance?.length ? (
                 attendance.map((a) => (
                   <TableRow key={`${a.attendance_id}`}>
                     <TableCell>{new Date(a.date).toLocaleDateString()}</TableCell>
                     <TableCell>{a.full_name} ({a.staff_id})</TableCell>
                     <TableCell>{a.department}</TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={a.work_status || 'Full-time'} 
+                        size="small" 
+                        color={a.work_status === 'Full-time' ? 'success' : a.work_status === 'Part-time' ? 'warning' : 'info'}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell>{a.manager_name || '-'}</TableCell>
+                    <TableCell>{a.project_code || '-'}</TableCell>
                     <TableCell>{a.check_in_time ? new Date(a.check_in_time).toLocaleTimeString() : '-'}</TableCell>
                     <TableCell>{a.check_out_time ? new Date(a.check_out_time).toLocaleTimeString() : '-'}</TableCell>
+                    <TableCell>
+                      {a.total_hours ? (
+                        <Chip 
+                          label={`${parseFloat(a.total_hours).toFixed(2)} hrs`} 
+                          size="small" 
+                          color="primary" 
+                          variant="outlined"
+                        />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {a.day_hours ? (
+                        <Chip 
+                          label={`${parseFloat(a.day_hours).toFixed(2)} hrs`} 
+                          size="small" 
+                          color="success" 
+                          variant="outlined"
+                        />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {a.overtime_hours && parseFloat(a.overtime_hours) > 0 ? (
+                        <Chip 
+                          label={`${parseFloat(a.overtime_hours).toFixed(2)} hrs`} 
+                          size="small" 
+                          color="warning" 
+                          variant="filled"
+                        />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {parseInt(a.late_arrival_minutes) > 0 ? (
+                        <Chip 
+                          label={`${a.late_arrival_minutes} min`} 
+                          size="small" 
+                          color="error" 
+                          variant="outlined"
+                        />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {parseInt(a.early_departure_minutes) > 0 ? (
+                        <Chip 
+                          label={`${a.early_departure_minutes} min`} 
+                          size="small" 
+                          color="error" 
+                          variant="outlined"
+                        />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {parseInt(a.break_time_duration) > 0 ? (
+                        <Chip 
+                          label={`${a.break_time_duration} min`} 
+                          size="small" 
+                          color="info" 
+                          variant="outlined"
+                        />
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={a.work_from_home ? 'Yes' : 'No'} 
+                        size="small" 
+                        color={a.work_from_home ? 'success' : 'default'}
+                        variant={a.work_from_home ? 'filled' : 'outlined'}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {a.attendance_notes ? (
+                        <Tooltip title={a.attendance_notes}>
+                          <Typography variant="caption" sx={{ 
+                            maxWidth: 100, 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            cursor: 'pointer'
+                          }}>
+                            {a.attendance_notes}
+                          </Typography>
+                        </Tooltip>
+                      ) : '-'}
+                    </TableCell>
                     <TableCell>
                       <Box display="flex" gap={1} alignItems="center">
                         {a.check_in_face_image_path && (
@@ -497,7 +744,7 @@ export default function AttendanceReport() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={7}>No records</TableCell></TableRow>
+                <TableRow><TableCell colSpan={17}>No records</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

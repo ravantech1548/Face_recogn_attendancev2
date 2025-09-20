@@ -40,6 +40,8 @@ router.get('/', auth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.staff_id, s.full_name, s.email, s.designation, s.department, s.is_active, s.created_at,
+              s.work_status, s.manager, s.work_from_home_enabled, s.work_start_time, s.work_end_time,
+              s.break_time_minutes, s.supervisor_name, s.project_code,
               u.user_id, u.username, u.role
        FROM staff s
        LEFT JOIN users u ON s.staff_id = u.staff_id
@@ -56,7 +58,10 @@ router.get('/:staffId', auth, async (req, res) => {
   try {
     const { staffId } = req.params;
     const result = await pool.query(
-      'SELECT staff_id, full_name, email, designation, department, face_image_path, is_active FROM staff WHERE staff_id = $1',
+      `SELECT staff_id, full_name, email, designation, department, face_image_path, is_active,
+              work_status, manager, work_from_home_enabled, work_start_time, work_end_time,
+              break_time_minutes, supervisor_name, project_code
+       FROM staff WHERE staff_id = $1`,
       [staffId]
     );
     if (result.rows.length === 0) {
@@ -86,7 +91,21 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { staffId, fullName, email, designation, department } = req.body;
+      const { 
+        staffId, 
+        fullName, 
+        email, 
+        designation, 
+        department,
+        workStatus,
+        manager,
+        workFromHomeEnabled,
+        workStartTime,
+        workEndTime,
+        breakTimeMinutes,
+        supervisorName,
+        projectCode
+      } = req.body;
       const faceImagePath = req.file
         ? path.join('uploads', 'faces', path.basename(req.file.path))
         : null;
@@ -100,10 +119,29 @@ router.post(
       }
 
       const result = await pool.query(
-        `INSERT INTO staff (staff_id, full_name, email, designation, department, face_image_path)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING staff_id, full_name, email, designation, department, face_image_path, created_at`,
-        [staffId, fullName, email, designation, department, faceImagePath]
+        `INSERT INTO staff (staff_id, full_name, email, designation, department, face_image_path,
+                           work_status, manager, work_from_home_enabled, work_start_time, work_end_time,
+                           break_time_minutes, supervisor_name, project_code)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         RETURNING staff_id, full_name, email, designation, department, face_image_path, created_at,
+                   work_status, manager, work_from_home_enabled, work_start_time, work_end_time,
+                   break_time_minutes, supervisor_name, project_code`,
+        [
+          staffId, 
+          fullName, 
+          email, 
+          designation, 
+          department, 
+          faceImagePath,
+          workStatus || 'Full-time',
+          manager || 'TBD',
+          workFromHomeEnabled === 'true' || workFromHomeEnabled === true,
+          workStartTime || '09:15:00',
+          workEndTime || '17:45:00',
+          breakTimeMinutes || 30,
+          supervisorName || 'TBD',
+          projectCode || department
+        ]
       );
 
       res.status(201).json({ message: 'Staff added successfully', staff: result.rows[0] });
@@ -117,7 +155,20 @@ router.post(
 router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async (req, res) => {
   try {
     const { staffId } = req.params;
-    const { fullName, email, designation, department } = req.body;
+    const { 
+      fullName, 
+      email, 
+      designation, 
+      department,
+      workStatus,
+      manager,
+      workFromHomeEnabled,
+      workStartTime,
+      workEndTime,
+      breakTimeMinutes,
+      supervisorName,
+      projectCode
+    } = req.body;
     const faceImagePath = req.file
       ? path.join('uploads', 'faces', path.basename(req.file.path))
       : null;
@@ -128,14 +179,45 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
     }
 
     let query =
-      'UPDATE staff SET full_name = $1, email = $2, designation = $3, department = $4, updated_at = CURRENT_TIMESTAMP';
-    const values = [fullName, email, designation, department];
+      `UPDATE staff SET 
+        full_name = $1, 
+        email = $2, 
+        designation = $3, 
+        department = $4, 
+        work_status = $5,
+        manager = $6,
+        work_from_home_enabled = $7,
+        work_start_time = $8,
+        work_end_time = $9,
+        break_time_minutes = $10,
+        supervisor_name = $11,
+        project_code = $12,
+        updated_at = CURRENT_TIMESTAMP`;
+    
+    const values = [
+      fullName, 
+      email, 
+      designation, 
+      department,
+      workStatus || 'Full-time',
+      manager || 'TBD',
+      workFromHomeEnabled === 'true' || workFromHomeEnabled === true,
+      workStartTime || '09:15:00',
+      workEndTime || '17:45:00',
+      breakTimeMinutes || 30,
+      supervisorName || 'TBD',
+      projectCode || department
+    ];
+    
     if (faceImagePath) {
-      query += ', face_image_path = $5';
+      query += ', face_image_path = $13';
       values.push(faceImagePath);
+      query += ` WHERE staff_id = $14 RETURNING *`;
+      values.push(staffId);
+    } else {
+      query += ` WHERE staff_id = $13 RETURNING *`;
+      values.push(staffId);
     }
-    query += ` WHERE staff_id = $${values.length + 1} RETURNING *`;
-    values.push(staffId);
 
     const result = await pool.query(query, values);
     res.json({ message: 'Staff updated successfully', staff: result.rows[0] });

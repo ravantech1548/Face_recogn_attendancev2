@@ -15,12 +15,27 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    console.log('AuthContext: Initializing authentication...')
     const token = localStorage.getItem('token')
     const userData = localStorage.getItem('user')
+    
+    console.log('AuthContext: Token present:', !!token)
+    console.log('AuthContext: User data present:', !!userData)
+    
     if (token && userData) {
-      setUser(JSON.parse(userData))
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      try {
+        const parsedUser = JSON.parse(userData)
+        console.log('AuthContext: Setting user:', parsedUser)
+        setUser(parsedUser)
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      } catch (error) {
+        console.error('AuthContext: Error parsing user data:', error)
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+      }
     }
+    
+    console.log('AuthContext: Setting loading to false')
     setLoading(false)
   }, [])
 

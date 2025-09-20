@@ -202,6 +202,10 @@ export default function StaffManagement() {
               <TableCell>Email</TableCell>
               <TableCell>Designation</TableCell>
               <TableCell>Department</TableCell>
+              <TableCell>Work Status</TableCell>
+              <TableCell>Manager</TableCell>
+              <TableCell>WFH</TableCell>
+              <TableCell>Working Hours</TableCell>
               <TableCell>User Account</TableCell>
               <TableCell>Status</TableCell>
               <TableCell align="right">Actions</TableCell>
@@ -215,6 +219,28 @@ export default function StaffManagement() {
                 <TableCell>{m.email}</TableCell>
                 <TableCell>{m.designation}</TableCell>
                 <TableCell>{m.department}</TableCell>
+                <TableCell>
+                  <Chip 
+                    size="small" 
+                    label={m.work_status || 'Full-time'} 
+                    color={m.work_status === 'Full-time' ? 'success' : m.work_status === 'Part-time' ? 'warning' : 'info'}
+                    variant="outlined"
+                  />
+                </TableCell>
+                <TableCell>{m.manager || '-'}</TableCell>
+                <TableCell>
+                  <Chip 
+                    size="small" 
+                    label={m.work_from_home_enabled ? 'Yes' : 'No'} 
+                    color={m.work_from_home_enabled ? 'success' : 'default'}
+                    variant={m.work_from_home_enabled ? 'filled' : 'outlined'}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Typography variant="caption">
+                    {m.work_start_time ? m.work_start_time.slice(0, 5) : '09:15'} - {m.work_end_time ? m.work_end_time.slice(0, 5) : '17:45'}
+                  </Typography>
+                </TableCell>
                 <TableCell>
                   {m.username ? (
                     <Chip 

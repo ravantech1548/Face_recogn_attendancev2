@@ -18,10 +18,15 @@ import {
   FormControlLabel,
   CircularProgress,
   Backdrop,
-  Fade
+  Fade,
+  Snackbar,
+  IconButton,
+  Avatar
 } from '@mui/material'
+import { CheckCircle, Close } from '@mui/icons-material'
 import { useAuth } from '../context/AuthContext'
 import API_BASE_URL, { getRecognitionUrl, getRecognitionConfig } from '../config/api'
+import toast from 'react-hot-toast'
 
 export default function AdminFaceAttendance() {
   const { user } = useAuth()
@@ -47,6 +52,41 @@ export default function AdminFaceAttendance() {
   const [isUploadLoading, setIsUploadLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState('')
   const [showLoadingBackdrop, setShowLoadingBackdrop] = useState(false)
+  const [successPopup, setSuccessPopup] = useState({
+    open: false,
+    staffName: '',
+    staffId: '',
+    confidence: 0,
+    attendanceType: ''
+  })
+
+  const showSuccessPopup = (staffName, staffId, confidence, attendanceType) => {
+    setSuccessPopup({
+      open: true,
+      staffName,
+      staffId,
+      confidence,
+      attendanceType
+    })
+    
+    // Show toast notification as well
+    toast.success(`✅ ${attendanceType} recorded for ${staffName} (${staffId})`, {
+      duration: 4000,
+      position: 'top-right',
+      style: {
+        background: '#4caf50',
+        color: 'white',
+        fontSize: '16px',
+        padding: '16px',
+        borderRadius: '8px'
+      }
+    })
+    
+    // Auto close after 4 seconds
+    setTimeout(() => {
+      setSuccessPopup(prev => ({ ...prev, open: false }))
+    }, 4000)
+  }
 
   const getSteps = () => {
     if (livenessDetectionEnabled) {
@@ -314,13 +354,24 @@ export default function AdminFaceAttendance() {
             formData.append('faceImage', capturedFrames[0], 'face_capture.jpg')
           }
           
-          await fetch(`${API_BASE_URL}/api/attendance/face-event`, {
+          const attendanceResponse = await fetch(`${API_BASE_URL}/api/attendance/face-event`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
             },
             body: formData
           })
+          
+          if (attendanceResponse.ok) {
+            const attendanceData = await attendanceResponse.json()
+            // Show success popup with staff details
+            showSuccessPopup(
+              best.fullName || best.staffId, 
+              best.staffId, 
+              best.score || 0, 
+              attendanceData.attendanceType || 'Check-in'
+            )
+          }
         } catch (e) {
           // ignore UI error; result still shown
         }
@@ -457,13 +508,24 @@ export default function AdminFaceAttendance() {
           // Add the captured frame as the face image
           formData.append('faceImage', blob, 'face_capture.jpg')
           
-          await fetch(`${API_BASE_URL}/api/attendance/face-event`, {
+          const attendanceResponse = await fetch(`${API_BASE_URL}/api/attendance/face-event`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
             },
             body: formData
           })
+          
+          if (attendanceResponse.ok) {
+            const attendanceData = await attendanceResponse.json()
+            // Show success popup with staff details
+            showSuccessPopup(
+              best.fullName || best.staffId, 
+              best.staffId, 
+              best.score || 0, 
+              attendanceData.attendanceType || 'Check-in'
+            )
+          }
         } catch (e) {
           // ignore UI error; result still shown
         }
@@ -603,13 +665,24 @@ export default function AdminFaceAttendance() {
           attendanceFormData.append('confidenceScore', best.score || 0)
           attendanceFormData.append('faceImage', file, filename)
           
-          await fetch(`${API_BASE_URL}/api/attendance/face-event`, {
+          const attendanceResponse = await fetch(`${API_BASE_URL}/api/attendance/face-event`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
             },
             body: attendanceFormData
           })
+          
+          if (attendanceResponse.ok) {
+            const attendanceData = await attendanceResponse.json()
+            // Show success popup with staff details
+            showSuccessPopup(
+              best.fullName || best.staffId, 
+              best.staffId, 
+              best.score || 0, 
+              attendanceData.attendanceType || 'Check-in'
+            )
+          }
         } catch (e) {
           // ignore UI error; result still shown
         }
@@ -923,6 +996,103 @@ export default function AdminFaceAttendance() {
           </Box>
         </Fade>
       </Backdrop>
+
+      {/* Success Popup */}
+      <Snackbar
+        open={successPopup.open}
+        autoHideDuration={4000}
+        onClose={() => setSuccessPopup(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{ mt: 8 }}
+      >
+        <Fade in={successPopup.open}>
+          <Paper
+            elevation={8}
+            sx={{
+              p: 3,
+              borderRadius: 3,
+              backgroundColor: 'success.main',
+              color: 'white',
+              minWidth: 400,
+              maxWidth: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              position: 'relative',
+              animation: 'successPulse 2s ease-in-out infinite',
+              '@keyframes successPulse': {
+                '0%': { 
+                  transform: 'scale(1)',
+                  boxShadow: '0 8px 32px rgba(76, 175, 80, 0.3)'
+                },
+                '50%': { 
+                  transform: 'scale(1.02)',
+                  boxShadow: '0 12px 40px rgba(76, 175, 80, 0.5)'
+                },
+                '100%': { 
+                  transform: 'scale(1)',
+                  boxShadow: '0 8px 32px rgba(76, 175, 80, 0.3)'
+                }
+              },
+              '@keyframes iconBounce': {
+                '0%, 100%': { transform: 'translateY(0px)' },
+                '50%': { transform: 'translateY(-4px)' }
+              },
+              '@keyframes iconPulse': {
+                '0%, 100%': { opacity: 1 },
+                '50%': { opacity: 0.8 }
+              }
+            }}
+          >
+            <Avatar
+              sx={{
+                backgroundColor: 'success.dark',
+                width: 56,
+                height: 56,
+                animation: 'iconBounce 1s ease-in-out infinite'
+              }}
+            >
+              <CheckCircle 
+                sx={{ 
+                  fontSize: 32,
+                  animation: 'iconPulse 1.5s ease-in-out infinite'
+                }} 
+              />
+            </Avatar>
+            
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+                ✅ Attendance Marked Successfully!
+              </Typography>
+              <Typography variant="body1" sx={{ mb: 0.5 }}>
+                <strong>Name:</strong> {successPopup.staffName}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 0.5 }}>
+                <strong>Staff ID:</strong> {successPopup.staffId}
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 0.5 }}>
+                <strong>Confidence:</strong> {(successPopup.confidence * 100).toFixed(1)}%
+              </Typography>
+              <Typography variant="body2">
+                <strong>Type:</strong> {successPopup.attendanceType}
+              </Typography>
+            </Box>
+            
+            <IconButton
+              size="small"
+              onClick={() => setSuccessPopup(prev => ({ ...prev, open: false }))}
+              sx={{ 
+                color: 'white',
+                position: 'absolute',
+                top: 8,
+                right: 8
+              }}
+            >
+              <Close />
+            </IconButton>
+          </Paper>
+        </Fade>
+      </Snackbar>
     </Container>
   )
 }
