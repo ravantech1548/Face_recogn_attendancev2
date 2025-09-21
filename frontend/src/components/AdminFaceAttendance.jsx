@@ -706,8 +706,8 @@ export default function AdminFaceAttendance() {
   if (!user || user.role !== 'admin') return <Alert severity="warning">Admin only</Alert>
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 3 }}>
-      <Paper sx={{ p: 3 }}>
+    <Container maxWidth="lg" sx={{ mt: { xs: 1, sm: 3 }, px: { xs: 1, sm: 3 } }}>
+      <Paper sx={{ p: { xs: 2, sm: 3 } }}>
         <Typography variant="h5" gutterBottom>Face Recognition Attendance with Liveness Detection</Typography>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         
@@ -738,9 +738,9 @@ export default function AdminFaceAttendance() {
           ))}
         </Stepper>
 
-        <Grid container spacing={3}>
+        <Grid container spacing={3} justifyContent="center">
           {/* Video Section */}
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} sm={10} md={8} lg={6}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>Camera Feed</Typography>
@@ -748,16 +748,17 @@ export default function AdminFaceAttendance() {
                   ref={videoRef} 
                   style={{ 
                     width: '100%', 
-                    maxHeight: 400, 
+                    maxHeight: '50vh', 
                     background: '#000',
-                    borderRadius: 8
+                    borderRadius: 8,
+                    boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
                   }} 
                   muted 
                   playsInline 
                 />
                 <canvas ref={canvasRef} style={{ display: 'none' }} />
                 
-                <Box display="flex" gap={2} flexWrap="wrap" sx={{ mt: 2 }}>
+                <Box display="flex" gap={2} flexWrap="wrap" sx={{ mt: 2, justifyContent: 'center' }}>
                   {!streaming ? (
                     <Button variant="contained" onClick={startStream} size="large">
                       Start Camera
@@ -792,7 +793,7 @@ export default function AdminFaceAttendance() {
           </Grid>
 
           {/* Liveness Status */}
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} sm={10} md={8} lg={6}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
@@ -923,27 +924,6 @@ export default function AdminFaceAttendance() {
             </Card>
           </Grid>
 
-          {/* Results */}
-          <Grid item xs={12}>
-            {lastResult && (
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>Recognition Results</Typography>
-                  <pre style={{ 
-                    whiteSpace: 'pre-wrap', 
-                    fontSize: '12px',
-                    backgroundColor: '#f5f5f5',
-                    padding: '12px',
-                    borderRadius: '4px',
-                    overflow: 'auto',
-                    maxHeight: '300px'
-                  }}>
-                    {JSON.stringify(lastResult, null, 2)}
-                  </pre>
-                </CardContent>
-              </Card>
-            )}
-          </Grid>
         </Grid>
       </Paper>
 

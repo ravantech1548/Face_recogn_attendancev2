@@ -53,7 +53,7 @@ router.post(
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-      const { staffId, customDateTime } = req.body;
+      const { staffId, customDateTime, attendanceNotes, manualReason } = req.body;
       
       // Use custom datetime if provided, otherwise use current time
       const checkInTime = customDateTime ? new Date(customDateTime) : new Date();
@@ -71,10 +71,10 @@ router.post(
           return res.status(400).json({ message: 'Cannot record attendance for future date/time' });
         }
         
-        // Check if custom datetime is not too far in the past (e.g., more than 30 days)
-        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-        if (checkInTime < thirtyDaysAgo) {
-          return res.status(400).json({ message: 'Cannot record attendance more than 30 days in the past' });
+        // Check if custom datetime is not too far in the past (e.g., more than 60 days)
+        const sixtyDaysAgo = new Date(now.getTime() - (60 * 24 * 60 * 60 * 1000));
+        if (checkInTime < sixtyDaysAgo) {
+          return res.status(400).json({ message: 'Cannot record attendance more than 60 days in the past' });
         }
       }
 
@@ -88,10 +88,14 @@ router.post(
         return res.status(400).json({ message: `Already checked in on ${dateStr}` });
       }
 
+      // Set work_from_home flag based on manual reason
+      const isWorkFromHome = manualReason === 'work_from_home'
+      const finalNotes = manualReason === 'others' ? attendanceNotes : attendanceNotes
+
       const result = await pool.query(
-        `INSERT INTO attendance (staff_id, check_in_time, date, status)
-         VALUES ($1, $2, $3, 'present') RETURNING *`,
-        [staffId, checkInTime, dateStr]
+        `INSERT INTO attendance (staff_id, check_in_time, date, status, attendance_notes, work_from_home)
+         VALUES ($1, $2, $3, 'present', $4, $5) RETURNING *`,
+        [staffId, checkInTime, dateStr, finalNotes, isWorkFromHome]
       );
       
       const message = customDateTime ? 
@@ -134,10 +138,10 @@ router.post(
           return res.status(400).json({ message: 'Cannot record attendance for future date/time' });
         }
         
-        // Check if custom datetime is not too far in the past (e.g., more than 30 days)
-        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-        if (checkOutTime < thirtyDaysAgo) {
-          return res.status(400).json({ message: 'Cannot record attendance more than 30 days in the past' });
+        // Check if custom datetime is not too far in the past (e.g., more than 60 days)
+        const sixtyDaysAgo = new Date(now.getTime() - (60 * 24 * 60 * 60 * 1000));
+        if (checkOutTime < sixtyDaysAgo) {
+          return res.status(400).json({ message: 'Cannot record attendance more than 60 days in the past' });
         }
       }
 
@@ -161,6 +165,8 @@ router.post(
         });
       }
 
+      // For check-out, only update the check_out_time
+      // Keep existing attendance_notes and work_from_home from check-in
       const result = await pool.query(
         'UPDATE attendance SET check_out_time = $2 WHERE attendance_id = $1 RETURNING *',
         [attId, checkOutTime]
@@ -232,31 +238,31 @@ router.get('/', auth, async (req, res) => {
               a.attendance_notes, a.late_arrival_minutes, a.early_departure_minutes,
               a.break_time_duration, a.work_from_home,
               s.full_name, s.department, s.designation, s.work_status, s.manager_name,
-              s.project_code, s.supervisor_name,
+              s.project_code, s.supervisor_name, s.break_time_minutes,
               CASE 
                 WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                   CASE 
-                    WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
-                      EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
+                    WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
+                      TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30), 'HH24:MI')
                     ELSE
-                      EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
+                      TO_CHAR((a.check_out_time - a.check_in_time), 'HH24:MI')
                   END
                 ELSE NULL
               END as total_hours,
               CASE 
                 WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                   CASE 
-                    WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                    WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
                       CASE 
-                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 <= 8.25 THEN
-                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
-                        ELSE 8.25
+                        WHEN (a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) <= INTERVAL '8 hours' THEN
+                          TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30), 'HH24:MI')
+                        ELSE '08:00'
                       END
                     ELSE
                       CASE 
-                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 <= 8.25 THEN
-                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
-                        ELSE 8.25
+                        WHEN (a.check_out_time - a.check_in_time) <= INTERVAL '8 hours' THEN
+                          TO_CHAR((a.check_out_time - a.check_in_time), 'HH24:MI')
+                        ELSE '08:00'
                       END
                   END
                 ELSE NULL
@@ -264,17 +270,17 @@ router.get('/', auth, async (req, res) => {
               CASE 
                 WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                   CASE 
-                    WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                    WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
                       CASE 
-                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 > 8.25 THEN
-                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 - 8.25
-                        ELSE 0
+                        WHEN (a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) > INTERVAL '8 hours' THEN
+                          TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) - INTERVAL '8 hours', 'HH24:MI')
+                        ELSE '00:00'
                       END
                     ELSE
                       CASE 
-                        WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 8.25 THEN
-                          EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 8.25
-                        ELSE 0
+                        WHEN (a.check_out_time - a.check_in_time) > INTERVAL '8 hours' THEN
+                          TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '8 hours', 'HH24:MI')
+                        ELSE '00:00'
                       END
                   END
                 ELSE NULL
@@ -391,51 +397,51 @@ router.get('/export', auth, async (req, res) => {
              a.attendance_notes, a.late_arrival_minutes, a.early_departure_minutes,
              a.break_time_duration, a.work_from_home,
              s.full_name, s.department, s.designation, s.email, s.work_status,
-             s.manager_name, s.project_code, s.supervisor_name,
+             s.manager_name, s.project_code, s.supervisor_name, s.break_time_minutes,
              CASE 
                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                  CASE 
-                   WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
-                     EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
+                   WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
+                     TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30), 'HH24:MI')
                    ELSE
-                     EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
+                     TO_CHAR((a.check_out_time - a.check_in_time), 'HH24:MI')
                  END
                ELSE NULL
              END as total_hours,
              CASE 
                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                  CASE 
-                   WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                   WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
                      CASE 
-                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 <= 8.25 THEN
-                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5
-                       ELSE 8.25
+                       WHEN (a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) <= INTERVAL '8 hours' THEN
+                         TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30), 'HH24:MI')
+                       ELSE '08:00'
                      END
                    ELSE
                      CASE 
-                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 <= 8.25 THEN
-                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0
-                       ELSE 8.25
+                       WHEN (a.check_out_time - a.check_in_time) <= INTERVAL '8 hours' THEN
+                         TO_CHAR((a.check_out_time - a.check_in_time), 'HH24:MI')
+                       ELSE '08:00'
                      END
-                   END
+                 END
                ELSE NULL
              END as day_hours,
              CASE 
                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                  CASE 
-                   WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 4.5 THEN
+                   WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
                      CASE 
-                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 > 8.25 THEN
-                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 0.5 - 8.25
-                       ELSE 0
+                       WHEN (a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) > INTERVAL '8 hours' THEN
+                         TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) - INTERVAL '8 hours', 'HH24:MI')
+                       ELSE '00:00'
                      END
                    ELSE
                      CASE 
-                       WHEN EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 > 8.25 THEN
-                         EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600.0 - 8.25
-                       ELSE 0
+                       WHEN (a.check_out_time - a.check_in_time) > INTERVAL '8 hours' THEN
+                         TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '8 hours', 'HH24:MI')
+                       ELSE '00:00'
                      END
-                   END
+                 END
                ELSE NULL
              END as overtime_hours
       FROM attendance a

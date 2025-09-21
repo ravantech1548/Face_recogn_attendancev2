@@ -80,6 +80,10 @@ export default function AttendanceReport() {
   const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5))
   const [dateFilter, setDateFilter] = useState('current_month') // 'current_month', 'last_month', 'all'
   const [isExporting, setIsExporting] = useState(false)
+  
+  // Manual attendance reason fields
+  const [manualReason, setManualReason] = useState('')
+  const [manualNotes, setManualNotes] = useState('')
 
   const { data: staffList } = useQuery('staff', async () => {
     const res = await axios.get(`${API_BASE_URL}/api/staff`)
@@ -167,10 +171,16 @@ export default function AttendanceReport() {
   )
 
   const checkIn = useMutation(
-    async ({ staffId, customDateTime }) => {
+    async ({ staffId, customDateTime, attendanceNotes, manualReason }) => {
       const payload = { staffId }
       if (customDateTime) {
         payload.customDateTime = customDateTime
+      }
+      if (attendanceNotes) {
+        payload.attendanceNotes = attendanceNotes
+      }
+      if (manualReason) {
+        payload.manualReason = manualReason
       }
       return axios.post(`${API_BASE_URL}/api/attendance/check-in`, payload)
     },
@@ -178,6 +188,9 @@ export default function AttendanceReport() {
       onSuccess: () => {
         toast.success('Check-in recorded')
         queryClient.invalidateQueries('attendance')
+        // Clear manual reason fields after successful check-in
+        setManualReason('')
+        setManualNotes('')
       },
       onError: (err) => toast.error(err.response?.data?.message || 'Check-in failed'),
     }
@@ -195,6 +208,8 @@ export default function AttendanceReport() {
       onSuccess: () => {
         toast.success('Check-out recorded')
         queryClient.invalidateQueries('attendance')
+        // Don't clear manual reason fields for check-out
+        // They should remain for the same day's attendance
       },
       onError: (err) => toast.error(err.response?.data?.message || 'Check-out failed'),
     }
@@ -221,8 +236,25 @@ export default function AttendanceReport() {
       return
     }
     
+    if (!manualReason) {
+      toast.error('Please select a reason for manual entry')
+      return
+    }
+    
+    if (manualReason === 'others' && !manualNotes.trim()) {
+      toast.error('Please provide details for "Others" reason')
+      return
+    }
+    
     const customDateTime = useCustomDateTime ? `${customDate}T${customTime}:00` : null
-    checkIn.mutate({ staffId: actionStaffId, customDateTime })
+    const attendanceNotes = manualReason === 'others' ? manualNotes : `${manualReason.replace('_', ' ').toUpperCase()}`
+    
+    checkIn.mutate({ 
+      staffId: actionStaffId, 
+      customDateTime,
+      attendanceNotes,
+      manualReason
+    })
   }
 
   const handleCheckOut = () => {
@@ -232,12 +264,52 @@ export default function AttendanceReport() {
     }
     
     const customDateTime = useCustomDateTime ? `${customDate}T${customTime}:00` : null
-    checkOut.mutate({ staffId: actionStaffId, customDateTime })
+    
+    checkOut.mutate({ 
+      staffId: actionStaffId, 
+      customDateTime
+      // No manualReason or attendanceNotes needed for check-out
+      // The check-out will use the existing reason from check-in
+    })
   }
 
   const resetCustomDateTime = () => {
     setCustomDate(new Date().toISOString().split('T')[0])
     setCustomTime(new Date().toTimeString().slice(0, 5))
+  }
+
+  // Get available manual attendance reasons based on selected staff
+  const getAvailableReasons = () => {
+    const baseReasons = [
+      { value: 'on_duty', label: 'On Duty' },
+      { value: 'face_detection_failure', label: 'Face Detection Failure' },
+      { value: 'others', label: 'Others' }
+    ]
+
+    // Add Work From Home option only if selected staff has WFH enabled
+    if (actionStaffId && staffList) {
+      const selectedStaff = staffList.find(s => s.staff_id === actionStaffId)
+      if (selectedStaff?.work_from_home_enabled) {
+        baseReasons.unshift({ value: 'work_from_home', label: 'Work From Home' })
+      }
+    }
+
+    return baseReasons
+  }
+
+  // Helper function to convert hh:mm format to decimal hours
+  const hhmmToDecimal = (hhmm) => {
+    if (!hhmm || hhmm === '00:00') return 0
+    const [hours, minutes] = hhmm.split(':').map(Number)
+    return hours + (minutes / 60)
+  }
+
+  // Helper function to convert decimal hours to hh:mm format
+  const decimalToHHMM = (decimalHours) => {
+    if (!decimalHours || decimalHours === 0) return '00:00'
+    const hours = Math.floor(decimalHours)
+    const minutes = Math.round((decimalHours - hours) * 60)
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
   }
 
   const handleExport = async (format = 'excel') => {
@@ -362,10 +434,65 @@ export default function AttendanceReport() {
               </>
             )}
 
+            {/* Manual Attendance Reason Section */}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Manual Entry Reason (Check-in Only)
+                </Typography>
+              </Divider>
+            </Grid>
+
+            <Grid item xs={12} sm={6} md={4}>
+              <TextField
+                select
+                fullWidth
+                label="Reason for Manual Entry"
+                value={manualReason}
+                onChange={(e) => {
+                  setManualReason(e.target.value)
+                  if (e.target.value !== 'others') {
+                    setManualNotes('')
+                  }
+                }}
+                required
+              >
+                {getAvailableReasons().map((reason) => (
+                  <MenuItem key={reason.value} value={reason.value}>
+                    {reason.label}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {manualReason === 'others' && (
+              <Grid item xs={12} sm={6} md={4}>
+                <TextField
+                  fullWidth
+                  label="Please specify reason"
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  placeholder="Enter details for manual entry..."
+                  multiline
+                  rows={2}
+                  required
+                />
+              </Grid>
+            )}
+
+            {/* Info box explaining the behavior */}
+            <Grid item xs={12}>
+              <Box sx={{ mt: 1, p: 1, backgroundColor: 'info.light', borderRadius: 1 }}>
+                <Typography variant="caption" color="info.dark">
+                  💡 <strong>Note:</strong> Manual entry reason is only required for check-in. Check-out will use the same reason from the check-in for the same day.
+                </Typography>
+              </Box>
+            </Grid>
+
             <Grid item xs={12} sm={'auto'}>
               <Button
                 variant="contained"
-                disabled={!actionStaffId || checkIn.isLoading}
+                disabled={!actionStaffId || !manualReason || checkIn.isLoading}
                 onClick={handleCheckIn}
               >
                 {checkIn.isLoading ? 'Checking in...' : 'Check In'}
@@ -536,7 +663,7 @@ export default function AttendanceReport() {
               <Grid item xs={12} sm={6} md={2}>
                 <Box sx={{ textAlign: 'center', p: 1 }}>
                   <Typography variant="h4" color="success.main">
-                    {attendance.reduce((sum, a) => sum + (parseFloat(a.total_hours) || 0), 0).toFixed(1)}
+                    {decimalToHHMM(attendance.reduce((sum, a) => sum + hhmmToDecimal(a.total_hours), 0))}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Total Hours
@@ -546,7 +673,7 @@ export default function AttendanceReport() {
               <Grid item xs={12} sm={6} md={2}>
                 <Box sx={{ textAlign: 'center', p: 1 }}>
                   <Typography variant="h4" color="success.main">
-                    {attendance.reduce((sum, a) => sum + (parseFloat(a.day_hours) || 0), 0).toFixed(1)}
+                    {decimalToHHMM(attendance.reduce((sum, a) => sum + hhmmToDecimal(a.day_hours), 0))}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Regular Hours
@@ -556,7 +683,7 @@ export default function AttendanceReport() {
               <Grid item xs={12} sm={6} md={2}>
                 <Box sx={{ textAlign: 'center', p: 1 }}>
                   <Typography variant="h4" color="warning.main">
-                    {attendance.reduce((sum, a) => sum + (parseFloat(a.overtime_hours) || 0), 0).toFixed(1)}
+                    {decimalToHHMM(attendance.reduce((sum, a) => sum + hhmmToDecimal(a.overtime_hours), 0))}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Overtime Hours
@@ -635,7 +762,7 @@ export default function AttendanceReport() {
                     <TableCell>
                       {a.total_hours ? (
                         <Chip 
-                          label={`${parseFloat(a.total_hours).toFixed(2)} hrs`} 
+                          label={`${a.total_hours}`} 
                           size="small" 
                           color="primary" 
                           variant="outlined"
@@ -645,7 +772,7 @@ export default function AttendanceReport() {
                     <TableCell>
                       {a.day_hours ? (
                         <Chip 
-                          label={`${parseFloat(a.day_hours).toFixed(2)} hrs`} 
+                          label={`${a.day_hours}`} 
                           size="small" 
                           color="success" 
                           variant="outlined"
@@ -653,9 +780,9 @@ export default function AttendanceReport() {
                       ) : '-'}
                     </TableCell>
                     <TableCell>
-                      {a.overtime_hours && parseFloat(a.overtime_hours) > 0 ? (
+                      {a.overtime_hours && a.overtime_hours !== '00:00' ? (
                         <Chip 
-                          label={`${parseFloat(a.overtime_hours).toFixed(2)} hrs`} 
+                          label={`${a.overtime_hours}`} 
                           size="small" 
                           color="warning" 
                           variant="filled"
@@ -683,9 +810,9 @@ export default function AttendanceReport() {
                       ) : '-'}
                     </TableCell>
                     <TableCell>
-                      {parseInt(a.break_time_duration) > 0 ? (
+                      {a.break_time_minutes ? (
                         <Chip 
-                          label={`${a.break_time_duration} min`} 
+                          label={`${a.break_time_minutes} min`} 
                           size="small" 
                           color="info" 
                           variant="outlined"
