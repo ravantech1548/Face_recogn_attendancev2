@@ -730,13 +730,72 @@ export default function AdminFaceAttendance() {
         </Box>
 
         {/* Progress Stepper */}
-        <Stepper activeStep={activeStep} sx={{ mb: 3 }}>
-          {getSteps().map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
+        <Box sx={{ mb: 3 }}>
+          {/* Desktop Stepper */}
+          <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+            <Stepper activeStep={activeStep}>
+              {getSteps().map((label) => (
+                <Step key={label}>
+                  <StepLabel>{label}</StepLabel>
+                </Step>
+              ))}
+            </Stepper>
+          </Box>
+          
+          {/* Mobile Stepper - 2 Rows */}
+          <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {getSteps().map((label, index) => (
+                <Box
+                  key={label}
+                  sx={{
+                    flex: '0 0 calc(50% - 4px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    p: 1,
+                    borderRadius: 2,
+                    backgroundColor: index <= activeStep ? 'primary.main' : 'grey.200',
+                    color: index <= activeStep ? 'white' : 'text.secondary',
+                    transition: 'all 0.3s ease',
+                    minHeight: 48,
+                    justifyContent: 'center',
+                    textAlign: 'center'
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: '50%',
+                      backgroundColor: index <= activeStep ? 'white' : 'grey.400',
+                      color: index <= activeStep ? 'primary.main' : 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      flexShrink: 0
+                    }}
+                  >
+                    {index + 1}
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      fontSize: '0.7rem',
+                      fontWeight: index <= activeStep ? 'bold' : 'normal',
+                      lineHeight: 1.2,
+                      textAlign: 'center'
+                    }}
+                  >
+                    {label}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        </Box>
 
         <Grid container spacing={3} justifyContent="center">
           {/* Video Section */}
