@@ -42,6 +42,7 @@ export default function AddStaff() {
   const [workStatus, setWorkStatus] = useState('Full-time')
   const [manager, setManager] = useState('')
   const [workFromHomeEnabled, setWorkFromHomeEnabled] = useState(false)
+  const [onDutyEnabled, setOnDutyEnabled] = useState(true)
   const [workStartTime, setWorkStartTime] = useState('09:15')
   const [workEndTime, setWorkEndTime] = useState('17:45')
   const [breakTimeMinutes, setBreakTimeMinutes] = useState(30)
@@ -67,6 +68,7 @@ export default function AddStaff() {
       setWorkStatus(staffData.work_status || 'Full-time')
       setManager(staffData.manager || '')
       setWorkFromHomeEnabled(staffData.work_from_home_enabled || false)
+      setOnDutyEnabled(staffData.on_duty_enabled !== false) // Default to true if not set
       setWorkStartTime(staffData.work_start_time ? staffData.work_start_time.slice(0, 5) : '09:15')
       setWorkEndTime(staffData.work_end_time ? staffData.work_end_time.slice(0, 5) : '17:45')
       setBreakTimeMinutes(staffData.break_time_minutes || 30)
@@ -112,6 +114,7 @@ export default function AddStaff() {
     formData.append('workStatus', workStatus)
     formData.append('manager', manager)
     formData.append('workFromHomeEnabled', workFromHomeEnabled)
+    formData.append('onDutyEnabled', onDutyEnabled)
     formData.append('workStartTime', workStartTime + ':00')
     formData.append('workEndTime', workEndTime + ':00')
     formData.append('breakTimeMinutes', breakTimeMinutes)
@@ -230,6 +233,19 @@ export default function AddStaff() {
                   />
                 }
                 label="Work From Home Enabled"
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={onDutyEnabled}
+                    onChange={(e) => setOnDutyEnabled(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="ON DUTY Enabled"
               />
             </Grid>
             

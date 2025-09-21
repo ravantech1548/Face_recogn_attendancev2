@@ -281,16 +281,22 @@ export default function AttendanceReport() {
   // Get available manual attendance reasons based on selected staff
   const getAvailableReasons = () => {
     const baseReasons = [
-      { value: 'on_duty', label: 'On Duty' },
       { value: 'face_detection_failure', label: 'Face Detection Failure' },
       { value: 'others', label: 'Others' }
     ]
 
-    // Add Work From Home option only if selected staff has WFH enabled
+    // Add conditional options based on staff settings
     if (actionStaffId && staffList) {
       const selectedStaff = staffList.find(s => s.staff_id === actionStaffId)
+      
+      // Add Work From Home option only if selected staff has WFH enabled
       if (selectedStaff?.work_from_home_enabled) {
         baseReasons.unshift({ value: 'work_from_home', label: 'Work From Home' })
+      }
+      
+      // Add On Duty option only if selected staff has ON DUTY enabled
+      if (selectedStaff?.on_duty_enabled !== false) { // Default to true if not set
+        baseReasons.unshift({ value: 'on_duty', label: 'On Duty' })
       }
     }
 

@@ -40,7 +40,7 @@ router.get('/', auth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.staff_id, s.full_name, s.email, s.designation, s.department, s.is_active, s.created_at,
-              s.work_status, s.manager, s.work_from_home_enabled, s.work_start_time, s.work_end_time,
+              s.work_status, s.manager, s.work_from_home_enabled, s.on_duty_enabled, s.work_start_time, s.work_end_time,
               s.break_time_minutes, s.supervisor_name, s.project_code,
               u.user_id, u.username, u.role
        FROM staff s
@@ -59,7 +59,7 @@ router.get('/:staffId', auth, async (req, res) => {
     const { staffId } = req.params;
     const result = await pool.query(
       `SELECT staff_id, full_name, email, designation, department, face_image_path, is_active,
-              work_status, manager, work_from_home_enabled, work_start_time, work_end_time,
+              work_status, manager, work_from_home_enabled, on_duty_enabled, work_start_time, work_end_time,
               break_time_minutes, supervisor_name, project_code
        FROM staff WHERE staff_id = $1`,
       [staffId]
@@ -100,6 +100,7 @@ router.post(
         workStatus,
         manager,
         workFromHomeEnabled,
+        onDutyEnabled,
         workStartTime,
         workEndTime,
         breakTimeMinutes,
@@ -120,11 +121,11 @@ router.post(
 
       const result = await pool.query(
         `INSERT INTO staff (staff_id, full_name, email, designation, department, face_image_path,
-                           work_status, manager, work_from_home_enabled, work_start_time, work_end_time,
+                           work_status, manager, work_from_home_enabled, on_duty_enabled, work_start_time, work_end_time,
                            break_time_minutes, supervisor_name, project_code)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING staff_id, full_name, email, designation, department, face_image_path, created_at,
-                   work_status, manager, work_from_home_enabled, work_start_time, work_end_time,
+                   work_status, manager, work_from_home_enabled, on_duty_enabled, work_start_time, work_end_time,
                    break_time_minutes, supervisor_name, project_code`,
         [
           staffId, 
@@ -136,6 +137,7 @@ router.post(
           workStatus || 'Full-time',
           manager || 'TBD',
           workFromHomeEnabled === 'true' || workFromHomeEnabled === true,
+          onDutyEnabled === 'true' || onDutyEnabled === true || onDutyEnabled === undefined,
           workStartTime || '09:15:00',
           workEndTime || '17:45:00',
           breakTimeMinutes || 30,
@@ -163,6 +165,7 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
       workStatus,
       manager,
       workFromHomeEnabled,
+      onDutyEnabled,
       workStartTime,
       workEndTime,
       breakTimeMinutes,
@@ -187,11 +190,12 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
         work_status = $5,
         manager = $6,
         work_from_home_enabled = $7,
-        work_start_time = $8,
-        work_end_time = $9,
-        break_time_minutes = $10,
-        supervisor_name = $11,
-        project_code = $12,
+        on_duty_enabled = $8,
+        work_start_time = $9,
+        work_end_time = $10,
+        break_time_minutes = $11,
+        supervisor_name = $12,
+        project_code = $13,
         updated_at = CURRENT_TIMESTAMP`;
     
     const values = [
@@ -202,6 +206,7 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
       workStatus || 'Full-time',
       manager || 'TBD',
       workFromHomeEnabled === 'true' || workFromHomeEnabled === true,
+      onDutyEnabled === 'true' || onDutyEnabled === true || onDutyEnabled === undefined,
       workStartTime || '09:15:00',
       workEndTime || '17:45:00',
       breakTimeMinutes || 30,
@@ -210,12 +215,12 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
     ];
     
     if (faceImagePath) {
-      query += ', face_image_path = $13';
+      query += ', face_image_path = $14';
       values.push(faceImagePath);
-      query += ` WHERE staff_id = $14 RETURNING *`;
+      query += ` WHERE staff_id = $15 RETURNING *`;
       values.push(staffId);
     } else {
-      query += ` WHERE staff_id = $13 RETURNING *`;
+      query += ` WHERE staff_id = $14 RETURNING *`;
       values.push(staffId);
     }
 
