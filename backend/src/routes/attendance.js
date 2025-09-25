@@ -510,9 +510,9 @@ router.get('/export', auth, async (req, res) => {
         'Project Code': record.project_code || '',
         'Check In Time': record.check_in_time ? new Date(record.check_in_time).toLocaleString() : '',
         'Check Out Time': record.check_out_time ? new Date(record.check_out_time).toLocaleString() : '',
-        'Total Hours': record.total_hours ? `${record.total_hours.toFixed(2)} hrs` : '',
-        'Day Hours': record.day_hours ? `${record.day_hours.toFixed(2)} hrs` : '',
-        'Overtime Hours': record.overtime_hours ? `${record.overtime_hours.toFixed(2)} hrs` : '',
+        'Total Hours': record.total_hours || '',
+        'Day Hours': record.day_hours || '',
+        'Overtime Hours': record.overtime_hours || '',
         'Late Arrival (min)': record.late_arrival_minutes || 0,
         'Early Departure (min)': record.early_departure_minutes || 0,
         'Break Time (min)': record.break_time_duration || 0,
@@ -526,16 +526,28 @@ router.get('/export', auth, async (req, res) => {
         'Created At': new Date(record.created_at).toLocaleString()
       }));
       
-      // Create CSV string
-      const headers = Object.keys(csvData[0] || {});
-      const csvContent = [
-        headers.join(','),
-        ...csvData.map(row => headers.map(header => `"${row[header] || ''}"`).join(','))
-      ].join('\n');
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
-      res.send(csvContent);
+      // Create CSV string - handle empty data case
+      if (csvData.length === 0) {
+        const headers = ['Date', 'Staff ID', 'Staff Name', 'Department', 'Designation', 'Email', 'Work Status', 'Manager Name', 'Supervisor Name', 'Project Code', 'Check In Time', 'Check Out Time', 'Total Hours', 'Day Hours', 'Overtime Hours', 'Late Arrival (min)', 'Early Departure (min)', 'Break Time (min)', 'Work From Home', 'Attendance Notes', 'Status', 'Check In Confidence', 'Check Out Confidence', 'Has Check In Photo', 'Has Check Out Photo', 'Created At'];
+        const csvContent = headers.join(',') + '\n';
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
+        res.send(csvContent);
+      } else {
+        const headers = Object.keys(csvData[0]);
+        const csvContent = [
+          headers.join(','),
+          ...csvData.map(row => headers.map(header => {
+            const value = row[header] || '';
+            // Escape quotes and wrap in quotes
+            return `"${String(value).replace(/"/g, '""')}"`;
+          }).join(','))
+        ].join('\n');
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
+        res.send(csvContent);
+      }
       
     } else {
       // Generate Excel
@@ -552,9 +564,9 @@ router.get('/export', auth, async (req, res) => {
         'Project Code': record.project_code || '',
         'Check In Time': record.check_in_time ? new Date(record.check_in_time).toLocaleString() : '',
         'Check Out Time': record.check_out_time ? new Date(record.check_out_time).toLocaleString() : '',
-        'Total Hours': record.total_hours ? `${record.total_hours.toFixed(2)} hrs` : '',
-        'Day Hours': record.day_hours ? `${record.day_hours.toFixed(2)} hrs` : '',
-        'Overtime Hours': record.overtime_hours ? `${record.overtime_hours.toFixed(2)} hrs` : '',
+        'Total Hours': record.total_hours || '',
+        'Day Hours': record.day_hours || '',
+        'Overtime Hours': record.overtime_hours || '',
         'Late Arrival (min)': record.late_arrival_minutes || 0,
         'Early Departure (min)': record.early_departure_minutes || 0,
         'Break Time (min)': record.break_time_duration || 0,
@@ -568,15 +580,20 @@ router.get('/export', auth, async (req, res) => {
         'Created At': new Date(record.created_at).toLocaleString()
       }));
       
-      const worksheet = XLSX.utils.json_to_sheet(excelData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Report');
-      
-      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.xlsx"');
-      res.send(excelBuffer);
+      try {
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Report');
+        
+        const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.xlsx"');
+        res.send(excelBuffer);
+      } catch (xlsxError) {
+        console.error('XLSX generation error:', xlsxError);
+        res.status(500).json({ message: 'Excel generation failed', error: xlsxError.message });
+      }
     }
     
   } catch (error) {
