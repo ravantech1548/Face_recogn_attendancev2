@@ -1,10 +1,10 @@
 // API configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://192.168.1.9:5000'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://192.168.0.4:5000'
 
 // Face Recognition Service Configuration
 const RECOGNITION_SERVICE_CONFIG = {
   // Base URL for the face recognition service
-  baseUrl: import.meta.env.VITE_RECOGNITION_URL || 'https://192.168.1.9:8001',
+  baseUrl: import.meta.env.VITE_RECOGNITION_URL || 'https://192.168.0.4:8001',
   
   // Individual endpoint paths
   endpoints: {

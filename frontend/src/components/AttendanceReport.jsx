@@ -323,10 +323,23 @@ export default function AttendanceReport() {
       setIsExporting(true)
       
       const exportParams = { ...queryParams, format }
+      console.log('Exporting with params:', exportParams)
+      
       const res = await axios.get(`${API_BASE_URL}/api/attendance/export`, { 
         params: exportParams,
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: 30000 // 30 second timeout
       })
+      
+      // Check if response is actually a blob
+      if (!(res.data instanceof Blob)) {
+        throw new Error('Invalid response format received from server')
+      }
+      
+      // Check if blob has content
+      if (res.data.size === 0) {
+        throw new Error('Empty file received from server')
+      }
       
       // Create download link
       const url = window.URL.createObjectURL(new Blob([res.data]))
@@ -361,7 +374,29 @@ export default function AttendanceReport() {
       toast.success(`${format.toUpperCase()} file downloaded successfully`)
     } catch (error) {
       console.error('Export error:', error)
-      toast.error('Failed to export data')
+      
+      let errorMessage = 'Failed to export data'
+      
+      if (error.response) {
+        // Server responded with error status
+        if (error.response.status === 500) {
+          errorMessage = 'Server error during export. Please try again.'
+        } else if (error.response.status === 401) {
+          errorMessage = 'Authentication required. Please log in again.'
+        } else if (error.response.status === 403) {
+          errorMessage = 'Permission denied. Contact administrator.'
+        } else {
+          errorMessage = `Export failed: ${error.response.data?.message || 'Unknown server error'}`
+        }
+      } else if (error.request) {
+        // Network error
+        errorMessage = 'Network error. Please check your connection and try again.'
+      } else if (error.message) {
+        // Other error
+        errorMessage = `Export failed: ${error.message}`
+      }
+      
+      toast.error(errorMessage)
     } finally {
       setIsExporting(false)
     }
