@@ -1,0 +1,32 @@
+{
+    "monitoring": {
+        "check_interval_seconds": 60,
+        "service_port": 8001,
+        "service_path": "/health",
+        "timeout_seconds": 5
+    },
+    "files_to_update": {
+        ".env": {
+            "enabled": true,
+            "ip_patterns": ["SERVICE_HOST=", "DB_HOST="]
+        },
+        "frontend/src/config/api.js": {
+            "enabled": true,
+            "ip_patterns": ["http://", "https://"]
+        }
+    },
+    "backup": {
+        "enabled": true,
+        "backup_directory": "ip_monitor_backups",
+        "keep_backups": 10
+    },
+    "logging": {
+        "level": "INFO",
+        "log_file": "ip_monitor.log",
+        "max_log_size_mb": 10
+    },
+    "services": {
+        "auto_restart": false,
+        "restart_delay_seconds": 5
+    }
+}
