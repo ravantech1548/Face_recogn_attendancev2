@@ -18,7 +18,7 @@ from psycopg2 import pool
 
 from liveness import is_blinking, has_head_movement, detect_face_quality
 from config import config
-
+#fix recogniser memory leak 29/09/2025
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, config.service.log_level.upper()),
