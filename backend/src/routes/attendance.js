@@ -55,9 +55,17 @@ router.post(
       }
       const { staffId, customDateTime, attendanceNotes, manualReason } = req.body;
       
-      // Use custom datetime if provided, otherwise use current time
-      const checkInTime = customDateTime ? new Date(customDateTime) : new Date();
-      const dateStr = checkInTime.toISOString().slice(0, 10);
+      // Use custom datetime if provided, otherwise use database timezone
+      let checkInTime, dateStr;
+      if (customDateTime) {
+        checkInTime = new Date(customDateTime);
+        dateStr = checkInTime.toISOString().slice(0, 10);
+      } else {
+        // Use database timezone for consistency
+        const timeRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today');
+        checkInTime = new Date(timeRes.rows[0].now);
+        dateStr = timeRes.rows[0].today;
+      }
 
       // Validate custom datetime if provided
       if (customDateTime) {
@@ -122,9 +130,17 @@ router.post(
       }
       const { staffId, customDateTime } = req.body;
       
-      // Use custom datetime if provided, otherwise use current time
-      const checkOutTime = customDateTime ? new Date(customDateTime) : new Date();
-      const dateStr = checkOutTime.toISOString().slice(0, 10);
+      // Use custom datetime if provided, otherwise use database timezone
+      let checkOutTime, dateStr;
+      if (customDateTime) {
+        checkOutTime = new Date(customDateTime);
+        dateStr = checkOutTime.toISOString().slice(0, 10);
+      } else {
+        // Use database timezone for consistency
+        const timeRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today');
+        checkOutTime = new Date(timeRes.rows[0].now);
+        dateStr = timeRes.rows[0].today;
+      }
 
       // Validate custom datetime if provided
       if (customDateTime) {
@@ -201,18 +217,28 @@ router.get('/', auth, async (req, res) => {
     
     // Apply date filters based on dateFilter parameter
     if (dateFilter === 'current_month') {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      params.push(firstDay.toISOString().split('T')[0]);
-      params.push(lastDay.toISOString().split('T')[0]);
+      // Use database timezone for accurate month calculation
+      const monthQuery = await pool.query(`
+        SELECT 
+          DATE_TRUNC('month', CURRENT_DATE) as first_day,
+          (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day') as last_day
+      `);
+      const firstDay = monthQuery.rows[0].first_day;
+      const lastDay = monthQuery.rows[0].last_day;
+      params.push(firstDay);
+      params.push(lastDay);
       conditions.push(`a.date >= $${params.length - 1} AND a.date <= $${params.length}`);
     } else if (dateFilter === 'last_month') {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
-      params.push(firstDay.toISOString().split('T')[0]);
-      params.push(lastDay.toISOString().split('T')[0]);
+      // Use database timezone for accurate month calculation
+      const monthQuery = await pool.query(`
+        SELECT 
+          DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as first_day,
+          (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day') as last_day
+      `);
+      const firstDay = monthQuery.rows[0].first_day;
+      const lastDay = monthQuery.rows[0].last_day;
+      params.push(firstDay);
+      params.push(lastDay);
       conditions.push(`a.date >= $${params.length - 1} AND a.date <= $${params.length}`);
     } else {
       // Use manual date filters if provided
@@ -310,8 +336,8 @@ router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body
     const { staffId, confidenceScore } = req.body;
     const faceImage = req.file;
     
-    // Get current time and date
-    const nowUpdateRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today');
+    // Get current time and date using database timezone
+    const nowUpdateRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today, CURRENT_TIMESTAMP AS server_timestamp');
     const now = new Date(nowUpdateRes.rows[0].now);
     const today = nowUpdateRes.rows[0].today;
     
@@ -453,19 +479,29 @@ router.get('/export', auth, async (req, res) => {
     
     // Apply date filters
     if (dateFilter === 'current_month') {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      // Use database timezone for accurate month calculation
+      const monthQuery = await pool.query(`
+        SELECT 
+          DATE_TRUNC('month', CURRENT_DATE) as first_day,
+          (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day') as last_day
+      `);
+      const firstDay = monthQuery.rows[0].first_day;
+      const lastDay = monthQuery.rows[0].last_day;
       conditions.push(`a.date >= $${params.length + 1} AND a.date <= $${params.length + 2}`);
-      params.push(firstDay.toISOString().split('T')[0]);
-      params.push(lastDay.toISOString().split('T')[0]);
+      params.push(firstDay);
+      params.push(lastDay);
     } else if (dateFilter === 'last_month') {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+      // Use database timezone for accurate month calculation
+      const monthQuery = await pool.query(`
+        SELECT 
+          DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as first_day,
+          (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day') as last_day
+      `);
+      const firstDay = monthQuery.rows[0].first_day;
+      const lastDay = monthQuery.rows[0].last_day;
       conditions.push(`a.date >= $${params.length + 1} AND a.date <= $${params.length + 2}`);
-      params.push(firstDay.toISOString().split('T')[0]);
-      params.push(lastDay.toISOString().split('T')[0]);
+      params.push(firstDay);
+      params.push(lastDay);
     } else if (startDate && endDate) {
       conditions.push(`a.date >= $${params.length + 1} AND a.date <= $${params.length + 2}`);
       params.push(startDate);
