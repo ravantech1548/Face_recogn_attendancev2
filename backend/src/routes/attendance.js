@@ -11,10 +11,19 @@ const requireAdmin = require('../middleware/requireAdmin');
 
 const router = express.Router();
 
-// Configure multer for face image uploads
+// Configure multer for face image uploads with organized folder structure
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../uploads/attendance');
+    // Get current date
+    const now = new Date();
+    const year = now.getFullYear().toString(); // YYYY
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const dateFolder = `${day}${month}${year}`; // DDMMYYYY
+    
+    // Create hierarchical folder structure: uploads/attendance/YYYY/DDMMYYYY
+    const uploadDir = path.join(__dirname, '../../uploads/attendance', year, dateFolder);
+    
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -352,7 +361,15 @@ router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body
 
     if (existingRes.rows.length === 0) {
       // No attendance record for today - CREATE NEW CHECK-IN
-      const faceImagePath = faceImage ? `uploads/attendance/${faceImage.filename}` : null;
+      let faceImagePath = null;
+      if (faceImage) {
+        // Extract the relative path from the full path
+        const year = now.getFullYear().toString();
+        const day = String(now.getDate()).padStart(2, '0');
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const dateFolder = `${day}${month}${year}`;
+        faceImagePath = `uploads/attendance/${year}/${dateFolder}/${faceImage.filename}`;
+      }
       const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
       
       const insertRes = await pool.query(
@@ -376,7 +393,14 @@ router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body
       // Has check-in but no check-out yet
       if (checkInTime && now.getTime() - checkInTime.getTime() >= fiveMinutesMs) {
         // More than 5 minutes since check-in - UPDATE CHECK-OUT
-        const faceImagePath = faceImage ? `uploads/attendance/${faceImage.filename}` : null;
+        let faceImagePath = null;
+        if (faceImage) {
+          const year = now.getFullYear().toString();
+          const day = String(now.getDate()).padStart(2, '0');
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const dateFolder = `${day}${month}${year}`;
+          faceImagePath = `uploads/attendance/${year}/${dateFolder}/${faceImage.filename}`;
+        }
         const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
         
         const upd = await pool.query(
@@ -394,7 +418,14 @@ router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body
 
     // Already has both check-in and check-out for today
     // Update check-out time to latest capture (last capture for the day)
-    const faceImagePath = faceImage ? `uploads/attendance/${faceImage.filename}` : null;
+    let faceImagePath = null;
+    if (faceImage) {
+      const year = now.getFullYear().toString();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const dateFolder = `${day}${month}${year}`;
+      faceImagePath = `uploads/attendance/${year}/${dateFolder}/${faceImage.filename}`;
+    }
     const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
     
     const upd = await pool.query(
@@ -586,7 +617,87 @@ router.get('/export', auth, async (req, res) => {
       }
       
     } else {
-      // Generate Excel
+      // Generate Excel with Summary Statistics
+      
+      // Helper function to convert HH:MM to decimal hours
+      const hhmmToDecimal = (hhmm) => {
+        if (!hhmm || hhmm === '00:00') return 0;
+        const [hours, minutes] = hhmm.split(':').map(Number);
+        return hours + (minutes / 60);
+      };
+      
+      // Helper function to convert decimal hours to HH:MM format
+      const decimalToHHMM = (decimalHours) => {
+        if (!decimalHours || decimalHours === 0) return '00:00';
+        const hours = Math.floor(decimalHours);
+        const minutes = Math.round((decimalHours - hours) * 60);
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      };
+      
+      // Calculate overall summary statistics
+      const overallSummary = {
+        totalDaysWorked: attendanceData.filter(a => a.total_hours).length,
+        totalHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.total_hours), 0),
+        totalRegularHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.day_hours), 0),
+        totalOvertimeHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.overtime_hours), 0),
+        totalLateMinutes: attendanceData.reduce((sum, a) => sum + (parseInt(a.late_arrival_minutes) || 0), 0),
+        totalWFHDays: attendanceData.filter(a => a.work_from_home).length
+      };
+      
+      // Calculate individual staff summaries
+      const staffSummaries = {};
+      attendanceData.forEach(record => {
+        if (!staffSummaries[record.staff_id]) {
+          staffSummaries[record.staff_id] = {
+            staffId: record.staff_id,
+            staffName: record.full_name,
+            department: record.department,
+            designation: record.designation,
+            workStatus: record.work_status || '',
+            daysWorked: 0,
+            totalHours: 0,
+            regularHours: 0,
+            overtimeHours: 0,
+            lateMinutes: 0,
+            wfhDays: 0
+          };
+        }
+        
+        const summary = staffSummaries[record.staff_id];
+        if (record.total_hours) summary.daysWorked++;
+        summary.totalHours += hhmmToDecimal(record.total_hours);
+        summary.regularHours += hhmmToDecimal(record.day_hours);
+        summary.overtimeHours += hhmmToDecimal(record.overtime_hours);
+        summary.lateMinutes += parseInt(record.late_arrival_minutes) || 0;
+        if (record.work_from_home) summary.wfhDays++;
+      });
+      
+      // Convert staff summaries object to array
+      const staffSummaryArray = Object.values(staffSummaries).map(summary => ({
+        'Staff ID': summary.staffId,
+        'Staff Name': summary.staffName,
+        'Department': summary.department,
+        'Designation': summary.designation,
+        'Work Status': summary.workStatus,
+        'Days Worked': summary.daysWorked,
+        'Total Hours': decimalToHHMM(summary.totalHours),
+        'Regular Hours': decimalToHHMM(summary.regularHours),
+        'Overtime Hours': decimalToHHMM(summary.overtimeHours),
+        'Late Minutes': summary.lateMinutes,
+        'Work From Home Days': summary.wfhDays
+      }));
+      
+      // Create overall summary data for Excel
+      const overallSummaryData = [
+        { 'Metric': 'Total Days Worked', 'Value': overallSummary.totalDaysWorked },
+        { 'Metric': 'Total Hours', 'Value': decimalToHHMM(overallSummary.totalHours) },
+        { 'Metric': 'Total Regular Hours', 'Value': decimalToHHMM(overallSummary.totalRegularHours) },
+        { 'Metric': 'Total Overtime Hours', 'Value': decimalToHHMM(overallSummary.totalOvertimeHours) },
+        { 'Metric': 'Total Late Minutes', 'Value': overallSummary.totalLateMinutes },
+        { 'Metric': 'Total Work From Home Days', 'Value': overallSummary.totalWFHDays }
+      ];
+      
+      // Create detailed attendance data
       const excelData = attendanceData.map(record => ({
         'Date': record.date,
         'Staff ID': record.staff_id,
@@ -617,9 +728,19 @@ router.get('/export', auth, async (req, res) => {
       }));
       
       try {
-        const worksheet = XLSX.utils.json_to_sheet(excelData);
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Report');
+        
+        // Create "Overall Summary" sheet
+        const overallSummarySheet = XLSX.utils.json_to_sheet(overallSummaryData);
+        XLSX.utils.book_append_sheet(workbook, overallSummarySheet, 'Overall Summary');
+        
+        // Create "Staff Summary" sheet
+        const staffSummarySheet = XLSX.utils.json_to_sheet(staffSummaryArray);
+        XLSX.utils.book_append_sheet(workbook, staffSummarySheet, 'Staff Summary');
+        
+        // Create "Detailed Attendance" sheet
+        const detailedSheet = XLSX.utils.json_to_sheet(excelData);
+        XLSX.utils.book_append_sheet(workbook, detailedSheet, 'Detailed Attendance');
         
         const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
         
