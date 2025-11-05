@@ -6,16 +6,51 @@ import Button from '@mui/material/Button'
 import Box from '@mui/material/Box'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import Logo from './Logo'
 
 export default function Navbar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   
   return (
-    <AppBar position="static">
-      <Toolbar>
-        <Typography variant="h6" sx={{ flexGrow: 1, cursor: 'pointer' }} onClick={() => navigate('/')}>
-          {user?.role === 'operator' ? 'Face Recognition' : 'Face Admin'}
+    <AppBar position="static" sx={{ backgroundColor: '#1976d2' }}>
+      <Toolbar sx={{ gap: 2 }}>
+        {/* Q Automation Logo - Top Left */}
+        <Box 
+          sx={{ 
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0
+          }} 
+          onClick={() => navigate('/')}
+        >
+          <Logo variant="compact" size="medium" />
+        </Box>
+        
+        {/* Divider */}
+        <Box 
+          sx={{ 
+            height: 40, 
+            width: 2, 
+            backgroundColor: 'rgba(255, 255, 255, 0.3)',
+            display: { xs: 'none', sm: 'block' }
+          }} 
+        />
+        
+        {/* Application Title */}
+        <Typography 
+          variant="h6" 
+          sx={{ 
+            flexGrow: 1, 
+            cursor: 'pointer',
+            color: 'white',
+            fontWeight: 500,
+            fontSize: { xs: '1rem', sm: '1.25rem' }
+          }} 
+          onClick={() => navigate('/')}
+        >
+          {user?.role === 'operator' ? 'Face Recognition System' : 'Face Attendance Admin'}
         </Typography>
         {user ? (
           <Box>
