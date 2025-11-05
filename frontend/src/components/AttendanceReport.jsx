@@ -80,6 +80,7 @@ export default function AttendanceReport() {
   const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5))
   const [dateFilter, setDateFilter] = useState('current_month') // 'current_month', 'last_month', 'all'
   const [isExporting, setIsExporting] = useState(false)
+  const [allowOverwrite, setAllowOverwrite] = useState(false)
   
   // Manual attendance reason fields
   const [manualReason, setManualReason] = useState('')
@@ -171,7 +172,7 @@ export default function AttendanceReport() {
   )
 
   const checkIn = useMutation(
-    async ({ staffId, customDateTime, attendanceNotes, manualReason }) => {
+    async ({ staffId, customDateTime, attendanceNotes, manualReason, overwrite }) => {
       const payload = { staffId }
       if (customDateTime) {
         payload.customDateTime = customDateTime
@@ -182,34 +183,48 @@ export default function AttendanceReport() {
       if (manualReason) {
         payload.manualReason = manualReason
       }
+      if (overwrite) {
+        payload.overwrite = overwrite
+      }
       return axios.post(`${API_BASE_URL}/api/attendance/check-in`, payload)
     },
     {
-      onSuccess: () => {
-        toast.success('Check-in recorded')
+      onSuccess: (response) => {
+        const message = response.data.overwritten ? 
+          'Check-in time updated successfully' : 
+          'Check-in recorded'
+        toast.success(message)
         queryClient.invalidateQueries('attendance')
         // Clear manual reason fields after successful check-in
         setManualReason('')
         setManualNotes('')
+        setAllowOverwrite(false) // Reset overwrite flag
       },
       onError: (err) => toast.error(err.response?.data?.message || 'Check-in failed'),
     }
   )
 
   const checkOut = useMutation(
-    async ({ staffId, customDateTime }) => {
+    async ({ staffId, customDateTime, overwrite }) => {
       const payload = { staffId }
       if (customDateTime) {
         payload.customDateTime = customDateTime
       }
+      if (overwrite) {
+        payload.overwrite = overwrite
+      }
       return axios.post(`${API_BASE_URL}/api/attendance/check-out`, payload)
     },
     {
-      onSuccess: () => {
-        toast.success('Check-out recorded')
+      onSuccess: (response) => {
+        const message = response.data.overwritten ? 
+          'Check-out time updated successfully' : 
+          'Check-out recorded'
+        toast.success(message)
         queryClient.invalidateQueries('attendance')
         // Don't clear manual reason fields for check-out
         // They should remain for the same day's attendance
+        setAllowOverwrite(false) // Reset overwrite flag
       },
       onError: (err) => toast.error(err.response?.data?.message || 'Check-out failed'),
     }
@@ -253,7 +268,8 @@ export default function AttendanceReport() {
       staffId: actionStaffId, 
       customDateTime,
       attendanceNotes,
-      manualReason
+      manualReason,
+      overwrite: allowOverwrite
     })
   }
 
@@ -267,7 +283,8 @@ export default function AttendanceReport() {
     
     checkOut.mutate({ 
       staffId: actionStaffId, 
-      customDateTime
+      customDateTime,
+      overwrite: allowOverwrite
       // No manualReason or attendanceNotes needed for check-out
       // The check-out will use the existing reason from check-in
     })
@@ -410,7 +427,7 @@ export default function AttendanceReport() {
           <Typography variant="h6" gutterBottom>Attendance Actions</Typography>
           
           {/* Custom DateTime Toggle */}
-          <Box sx={{ mb: 2 }}>
+          <Box sx={{ mb: 2, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
             <FormControlLabel
               control={
                 <Switch
@@ -427,6 +444,20 @@ export default function AttendanceReport() {
               label={
                 <Typography variant="body2">
                   Use custom date/time for backdating attendance
+                </Typography>
+              }
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={allowOverwrite}
+                  onChange={(e) => setAllowOverwrite(e.target.checked)}
+                  color="warning"
+                />
+              }
+              label={
+                <Typography variant="body2">
+                  Allow overwrite of existing check-in/checkout times
                 </Typography>
               }
             />
@@ -554,6 +585,15 @@ export default function AttendanceReport() {
             <Box sx={{ mt: 2, p: 1, backgroundColor: 'info.light', borderRadius: 1 }}>
               <Typography variant="caption" color="info.dark">
                 💡 <strong>Backdating Mode:</strong> Attendance will be recorded for {customDate} at {customTime}
+              </Typography>
+            </Box>
+          )}
+          
+          {allowOverwrite && (
+            <Box sx={{ mt: 2, p: 1, backgroundColor: 'warning.light', borderRadius: 1 }}>
+              <Typography variant="caption" color="warning.dark">
+                ⚠️ <strong>Overwrite Mode Enabled:</strong> This will update existing check-in/checkout times for the selected date. 
+                Use this to correct attendance records when face recognition captured incorrect times (e.g., when check-in failed and checkout was captured as check-in).
               </Typography>
             </Box>
           )}

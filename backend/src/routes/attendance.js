@@ -8,6 +8,7 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const pool = require('../config/database');
 const auth = require('../middleware/auth');
 const requireAdmin = require('../middleware/requireAdmin');
+const requireAdminOrOperator = require('../middleware/requireAdminOrOperator');
 
 const router = express.Router();
 
@@ -19,10 +20,11 @@ const storage = multer.diskStorage({
     const year = now.getFullYear().toString(); // YYYY
     const day = String(now.getDate()).padStart(2, '0');
     const month = String(now.getMonth() + 1).padStart(2, '0');
+    const monthFolder = `${month}${year}`; // MMYYYY
     const dateFolder = `${day}${month}${year}`; // DDMMYYYY
     
-    // Create hierarchical folder structure: uploads/attendance/YYYY/DDMMYYYY
-    const uploadDir = path.join(__dirname, '../../uploads/attendance', year, dateFolder);
+    // Create hierarchical folder structure: uploads/attendance/YYYY/MMYYYY/DDMMYYYY
+    const uploadDir = path.join(__dirname, '../../uploads/attendance', year, monthFolder, dateFolder);
     
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -52,17 +54,17 @@ const upload = multer({
   }
 });
 
-// Record check-in
+// Record check-in (Admin only - for manual attendance entry)
 router.post(
   '/check-in',
-  [auth, body('staffId').notEmpty().withMessage('staffId is required')],
+  [auth, requireAdmin, body('staffId').notEmpty().withMessage('staffId is required')],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-      const { staffId, customDateTime, attendanceNotes, manualReason } = req.body;
+      const { staffId, customDateTime, attendanceNotes, manualReason, overwrite } = req.body;
       
       // Use custom datetime if provided, otherwise use database timezone
       let checkInTime, dateStr;
@@ -97,18 +99,53 @@ router.post(
 
       // Check if already checked-in for the specified date
       const existing = await pool.query(
-        'SELECT attendance_id FROM attendance WHERE staff_id = $1 AND date = $2',
+        'SELECT attendance_id, check_out_time FROM attendance WHERE staff_id = $1 AND date = $2',
         [staffId, dateStr]
       );
-
-      if (existing.rows.length > 0) {
-        return res.status(400).json({ message: `Already checked in on ${dateStr}` });
-      }
 
       // Set work_from_home flag based on manual reason
       const isWorkFromHome = manualReason === 'work_from_home'
       const finalNotes = manualReason === 'others' ? attendanceNotes : attendanceNotes
 
+      if (existing.rows.length > 0) {
+        // If overwrite flag is set, allow manual update of check-in time
+        if (overwrite === true || overwrite === 'true') {
+          const attendanceId = existing.rows[0].attendance_id;
+          const existingCheckOut = existing.rows[0].check_out_time;
+          
+          // If there's a checkout time, validate that new check-in is before it
+          if (existingCheckOut) {
+            const checkOutTime = new Date(existingCheckOut);
+            if (checkInTime >= checkOutTime) {
+              return res.status(400).json({ 
+                message: 'Manual check-in time must be before existing check-out time',
+                checkInTime: checkInTime.toLocaleString(),
+                checkOutTime: checkOutTime.toLocaleString()
+              });
+            }
+          }
+          
+          // Update the existing record
+          const result = await pool.query(
+            `UPDATE attendance 
+             SET check_in_time = $2, attendance_notes = $3, work_from_home = $4
+             WHERE attendance_id = $1 RETURNING *`,
+            [attendanceId, checkInTime, finalNotes, isWorkFromHome]
+          );
+          
+          const message = customDateTime ? 
+            `Check-in time updated for ${dateStr} to ${checkInTime.toLocaleTimeString()} (manual overwrite)` : 
+            'Check-in time updated (manual overwrite)';
+            
+          return res.status(200).json({ message, attendance: result.rows[0], overwritten: true });
+        } else {
+          return res.status(400).json({ 
+            message: `Already checked in on ${dateStr}. Use 'overwrite: true' to update the check-in time.` 
+          });
+        }
+      }
+
+      // Create new check-in record
       const result = await pool.query(
         `INSERT INTO attendance (staff_id, check_in_time, date, status, attendance_notes, work_from_home)
          VALUES ($1, $2, $3, 'present', $4, $5) RETURNING *`,
@@ -127,17 +164,17 @@ router.post(
   }
 );
 
-// Record check-out
+// Record check-out (Admin only - for manual attendance entry)
 router.post(
   '/check-out',
-  [auth, body('staffId').notEmpty().withMessage('staffId is required')],
+  [auth, requireAdmin, body('staffId').notEmpty().withMessage('staffId is required')],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-      const { staffId, customDateTime } = req.body;
+      const { staffId, customDateTime, overwrite } = req.body;
       
       // Use custom datetime if provided, otherwise use database timezone
       let checkOutTime, dateStr;
@@ -179,14 +216,26 @@ router.post(
       }
 
       const attId = existing.rows[0].attendance_id;
+      const existingCheckOut = existing.rows[0].check_out_time;
       
       // Validate that check-out time is after check-in time
       const checkInTime = new Date(existing.rows[0].check_in_time);
       if (checkOutTime <= checkInTime) {
+        // Allow overwrite to bypass this validation if explicitly requested
+        if (!(overwrite === true || overwrite === 'true')) {
+          return res.status(400).json({ 
+            message: 'Check-out time must be after check-in time. Use \'overwrite: true\' to force update.',
+            checkInTime: checkInTime.toLocaleString(),
+            checkOutTime: checkOutTime.toLocaleString()
+          });
+        }
+      }
+
+      // Check if checkout already exists and overwrite is not enabled
+      if (existingCheckOut && !(overwrite === true || overwrite === 'true')) {
         return res.status(400).json({ 
-          message: 'Check-out time must be after check-in time',
-          checkInTime: checkInTime.toLocaleString(),
-          checkOutTime: checkOutTime.toLocaleString()
+          message: `Check-out already recorded for ${dateStr}. Use 'overwrite: true' to update the check-out time.`,
+          existingCheckOut: new Date(existingCheckOut).toLocaleString()
         });
       }
 
@@ -197,11 +246,12 @@ router.post(
         [attId, checkOutTime]
       );
       
+      const isOverwrite = existingCheckOut ? ' (manual overwrite)' : '';
       const message = customDateTime ? 
-        `Check-out recorded for ${dateStr} at ${checkOutTime.toLocaleTimeString()}` : 
-        'Check-out recorded';
+        `Check-out recorded for ${dateStr} at ${checkOutTime.toLocaleTimeString()}${isOverwrite}` : 
+        `Check-out recorded${isOverwrite}`;
         
-      res.json({ message, attendance: result.rows[0] });
+      res.json({ message, attendance: result.rows[0], overwritten: !!existingCheckOut });
     } catch (error) {
       console.error('Check-out error:', error);
       res.status(500).json({ message: 'Server error' });
@@ -333,10 +383,9 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
-
 // Face event: auto check-in/out with proper daily logic and face capture storage
-router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body('staffId').notEmpty()], async (req, res) => {
+// Accessible by both admin and operator roles
+router.post('/face-event', [auth, requireAdminOrOperator, upload.single('faceImage'), body('staffId').notEmpty()], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -367,8 +416,9 @@ router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body
         const year = now.getFullYear().toString();
         const day = String(now.getDate()).padStart(2, '0');
         const month = String(now.getMonth() + 1).padStart(2, '0');
+        const monthFolder = `${month}${year}`;
         const dateFolder = `${day}${month}${year}`;
-        faceImagePath = `uploads/attendance/${year}/${dateFolder}/${faceImage.filename}`;
+        faceImagePath = `uploads/attendance/${year}/${monthFolder}/${dateFolder}/${faceImage.filename}`;
       }
       const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
       
@@ -398,8 +448,9 @@ router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body
           const year = now.getFullYear().toString();
           const day = String(now.getDate()).padStart(2, '0');
           const month = String(now.getMonth() + 1).padStart(2, '0');
+          const monthFolder = `${month}${year}`;
           const dateFolder = `${day}${month}${year}`;
-          faceImagePath = `uploads/attendance/${year}/${dateFolder}/${faceImage.filename}`;
+          faceImagePath = `uploads/attendance/${year}/${monthFolder}/${dateFolder}/${faceImage.filename}`;
         }
         const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
         
@@ -423,8 +474,9 @@ router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body
       const year = now.getFullYear().toString();
       const day = String(now.getDate()).padStart(2, '0');
       const month = String(now.getMonth() + 1).padStart(2, '0');
+      const monthFolder = `${month}${year}`;
       const dateFolder = `${day}${month}${year}`;
-      faceImagePath = `uploads/attendance/${year}/${dateFolder}/${faceImage.filename}`;
+      faceImagePath = `uploads/attendance/${year}/${monthFolder}/${dateFolder}/${faceImage.filename}`;
     }
     const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
     
@@ -759,4 +811,4 @@ router.get('/export', auth, async (req, res) => {
   }
 });
 
-
+module.exports = router;

@@ -10,6 +10,7 @@ import StaffManagement from './components/StaffManagement'
 import AddStaff from './components/AddStaff'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
+import OperatorRoute from './components/OperatorRoute'
 import HomeRedirect from './components/HomeRedirect'
 import Navbar from './components/Navbar'
 import { AuthProvider } from './context/AuthContext'
@@ -50,7 +51,7 @@ export default function App() {
               />
               <Route
                 path="/attendance/face"
-                element={<AdminRoute component={AdminFaceAttendance} />}
+                element={<OperatorRoute component={AdminFaceAttendance} />}
               />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>

@@ -15,8 +15,8 @@ const RECOGNITION_SERVICE_CONFIG = {
     reload: '/reload'
   },
   
-  // Request timeout in milliseconds (increased to 60s for slow face recognition)
-  timeout: parseInt(import.meta.env.VITE_RECOGNITION_TIMEOUT) || 60000,
+  // Request timeout in milliseconds
+  timeout: parseInt(import.meta.env.VITE_RECOGNITION_TIMEOUT) || 30000,
   
   // SSL/TLS configuration
   ssl: {
