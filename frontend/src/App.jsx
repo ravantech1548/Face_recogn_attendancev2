@@ -2,6 +2,7 @@ import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from 'react-query'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
+import { Box } from '@mui/material'
 import CssBaseline from '@mui/material/CssBaseline'
 import { Toaster } from 'react-hot-toast'
 
@@ -13,6 +14,7 @@ import AdminRoute from './components/AdminRoute'
 import OperatorRoute from './components/OperatorRoute'
 import HomeRedirect from './components/HomeRedirect'
 import Navbar from './components/Navbar'
+import Footer from './components/Footer'
 import { AuthProvider } from './context/AuthContext'
 import AttendanceReport from './components/AttendanceReport'
 import AdminFaceAttendance from './components/AdminFaceAttendance'
@@ -34,28 +36,33 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <Router>
-            <Navbar />
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/" element={<ProtectedRoute component={HomeRedirect} />} />
-              <Route path="/staff" element={<AdminRoute component={StaffManagement} />} />
-              <Route path="/staff/add" element={<AdminRoute component={AddStaff} />} />
-              <Route path="/staff/edit/:staffId" element={<AdminRoute component={AddStaff} />} />
-              <Route
-                path="/attendance"
-                element={
-                  <ErrorBoundary>
-                    <ProtectedRoute component={AttendanceReport} />
-                  </ErrorBoundary>
-                }
-              />
-              <Route
-                path="/attendance/face"
-                element={<OperatorRoute component={AdminFaceAttendance} />}
-              />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-            <Toaster position="top-right" />
+            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+              <Navbar />
+              <Box component="main" sx={{ flexGrow: 1 }}>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/" element={<ProtectedRoute component={HomeRedirect} />} />
+                  <Route path="/staff" element={<AdminRoute component={StaffManagement} />} />
+                  <Route path="/staff/add" element={<AdminRoute component={AddStaff} />} />
+                  <Route path="/staff/edit/:staffId" element={<AdminRoute component={AddStaff} />} />
+                  <Route
+                    path="/attendance"
+                    element={
+                      <ErrorBoundary>
+                        <ProtectedRoute component={AttendanceReport} />
+                      </ErrorBoundary>
+                    }
+                  />
+                  <Route
+                    path="/attendance/face"
+                    element={<OperatorRoute component={AdminFaceAttendance} />}
+                  />
+                  <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+              </Box>
+              <Footer />
+              <Toaster position="top-right" />
+            </Box>
           </Router>
         </AuthProvider>
       </QueryClientProvider>
