@@ -10,20 +10,33 @@ import { useNavigate } from 'react-router-dom'
 export default function Navbar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  
   return (
     <AppBar position="static">
       <Toolbar>
-        <Typography variant="h6" sx={{ flexGrow: 1, cursor: 'pointer' }} onClick={() => navigate('/')}>Face Admin</Typography>
+        <Typography variant="h6" sx={{ flexGrow: 1, cursor: 'pointer' }} onClick={() => navigate('/')}>
+          {user?.role === 'operator' ? 'Face Recognition' : 'Face Admin'}
+        </Typography>
         {user ? (
           <Box>
+            {/* Admin-only links */}
             {user?.role === 'admin' && (
               <>
                 <Button color="inherit" onClick={() => navigate('/staff')}>Staff</Button>
                 <Button color="inherit" onClick={() => navigate('/attendance/face')}>Face Attendance</Button>
+                <Button color="inherit" onClick={() => navigate('/attendance')}>Attendance Report</Button>
               </>
             )}
-            <Button color="inherit" onClick={() => navigate('/attendance')}>Attendance</Button>
-            <Button color="inherit" onClick={logout}>Logout</Button>
+            
+            {/* Operator-only links */}
+            {user?.role === 'operator' && (
+              <>
+                <Button color="inherit" onClick={() => navigate('/attendance/face')}>Face Attendance</Button>
+                <Button color="inherit" onClick={() => navigate('/attendance')}>View Reports</Button>
+              </>
+            )}
+            
+            <Button color="inherit" onClick={logout}>Logout ({user.username})</Button>
           </Box>
         ) : (
           <Button color="inherit" onClick={() => navigate('/login')}>Login</Button>

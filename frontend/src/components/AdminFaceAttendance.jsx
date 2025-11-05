@@ -703,7 +703,10 @@ export default function AdminFaceAttendance() {
     }
   }
 
-  if (!user || user.role !== 'admin') return <Alert severity="warning">Admin only</Alert>
+  // Allow both admin and operator roles to access face attendance
+  if (!user || (user.role !== 'admin' && user.role !== 'operator')) {
+    return <Alert severity="warning">Access denied. Admin or Operator role required.</Alert>
+  }
 
   return (
     <Container maxWidth="lg" sx={{ mt: { xs: 1, sm: 3 }, px: { xs: 1, sm: 3 } }}>

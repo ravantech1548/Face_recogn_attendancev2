@@ -4,9 +4,18 @@ import { useAuth } from '../context/AuthContext'
 
 export default function HomeRedirect() {
   const { user, loading } = useAuth()
+  
   if (loading) return null
   if (!user) return <Navigate to="/login" />
-  return <Navigate to={user.role === 'admin' ? '/staff' : '/attendance'} />
+  
+  // Redirect based on role
+  if (user.role === 'admin') {
+    return <Navigate to="/staff" />
+  } else if (user.role === 'operator') {
+    return <Navigate to="/attendance/face" />
+  } else {
+    return <Navigate to="/attendance" />
+  }
 }
 
 

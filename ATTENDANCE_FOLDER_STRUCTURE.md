@@ -9,18 +9,27 @@ The attendance face capture images are now organized in a hierarchical folder st
 ```
 backend/uploads/attendance/
 ├── 2025/
-│   ├── 24102025/
-│   │   ├── attendance-EMP001-1729756800000.jpg
-│   │   ├── attendance-EMP002-1729760400000.jpg
-│   │   └── attendance-EMP003-1729764000000.png
-│   ├── 25102025/
-│   │   ├── attendance-EMP001-1729843200000.jpg
-│   │   └── attendance-EMP004-1729846800000.jpg
-│   └── 26102025/
-│       └── attendance-EMP002-1729929600000.jpg
+│   ├── 102025/
+│   │   ├── 24102025/
+│   │   │   ├── attendance-EMP001-1729756800000.jpg
+│   │   │   ├── attendance-EMP002-1729760400000.jpg
+│   │   │   └── attendance-EMP003-1729764000000.png
+│   │   ├── 25102025/
+│   │   │   ├── attendance-EMP001-1729843200000.jpg
+│   │   │   └── attendance-EMP004-1729846800000.jpg
+│   │   └── 26102025/
+│   │       └── attendance-EMP002-1729929600000.jpg
+│   ├── 112025/
+│   │   ├── 01112025/
+│   │   │   └── attendance-EMP001-1730419200000.jpg
+│   │   └── ...
+│   └── 122025/
+│       └── ...
 ├── 2024/
-│   ├── 31122024/
-│   │   └── attendance-EMP001-1704038400000.jpg
+│   ├── 122024/
+│   │   ├── 31122024/
+│   │   │   └── attendance-EMP001-1704038400000.jpg
+│   │   └── ...
 │   └── ...
 └── ...
 ```
@@ -32,13 +41,21 @@ backend/uploads/attendance/
 - **Examples**: `2025`, `2024`, `2023`
 - **Purpose**: Top-level organization by year
 
+### Month Folder: `MMYYYY`
+- **Format**: Month (2 digits) + Year (4 digits)
+- **Examples**: 
+  - `102025` = October 2025
+  - `012025` = January 2025
+  - `122024` = December 2024
+- **Purpose**: Monthly organization within each year
+
 ### Daily Folder: `DDMMYYYY`
 - **Format**: Day (2 digits) + Month (2 digits) + Year (4 digits)
 - **Examples**: 
   - `24102025` = October 24, 2025
   - `01012025` = January 1, 2025
   - `31122024` = December 31, 2024
-- **Purpose**: Daily organization within each year
+- **Purpose**: Daily organization within each month
 
 ### File Naming: `attendance-{STAFF_ID}-{TIMESTAMP}.{EXT}`
 - **Format**: attendance-[Staff ID]-[Unix Timestamp].[Extension]
@@ -60,8 +77,8 @@ backend/uploads/attendance/
 
 ### 2. **Performance**
 - Faster file system operations
-- Reduced directory size (max ~31 files per day per staff)
-- Better OS file indexing
+- Reduced directory size (max ~31 days per month, ~100 files per day)
+- Better OS file indexing with three-level hierarchy
 
 ### 3. **Maintenance**
 - Easy to archive old years
@@ -93,7 +110,7 @@ No manual folder creation is needed!
 
 The full relative path is stored in the database:
 ```
-uploads/attendance/2025/24102025/attendance-EMP001-1729756800000.jpg
+uploads/attendance/2025/102025/24102025/attendance-EMP001-1729756800000.jpg
 ```
 
 This ensures:
@@ -119,7 +136,7 @@ Frontend code remains unchanged! The stored path includes the full folder struct
 // In AttendanceReport.jsx
 <Avatar
   src={`${API_BASE_URL}/${record.check_in_face_image_path}`}
-  // Resolves to: http://localhost:5000/uploads/attendance/2025/24102025/attendance-EMP001-...jpg
+  // Resolves to: http://localhost:5000/uploads/attendance/2025/102025/24102025/attendance-EMP001-...jpg
 />
 ```
 
@@ -143,6 +160,17 @@ Move-Item backend\uploads\attendance\2023 C:\Archives\attendance\2023
 
 # Linux/Mac
 mv backend/uploads/attendance/2023 /archives/attendance/2023
+```
+
+### Archiving Old Months
+
+To archive a specific month (e.g., January 2025):
+```bash
+# Windows
+Move-Item backend\uploads\attendance\2025\012025 C:\Archives\attendance\2025\012025
+
+# Linux/Mac
+mv backend/uploads/attendance/2025/012025 /archives/attendance/2025/012025
 ```
 
 ### Cleanup Script Example
@@ -170,7 +198,7 @@ cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 1. Verify the path in the database matches the actual file location
 2. Ensure static file serving is enabled in server.js
 3. Check folder permissions (read/write)
-4. Confirm the file exists: `ls backend/uploads/attendance/YYYY/DDMMYYYY/`
+4. Confirm the file exists: `ls backend/uploads/attendance/YYYY/MMYYYY/DDMMYYYY/`
 
 ### Issue: Folder creation fails
 
@@ -237,7 +265,8 @@ Average file sizes:
 # Linux/Mac
 chmod 755 backend/uploads/attendance
 chmod 755 backend/uploads/attendance/YYYY
-chmod 644 backend/uploads/attendance/YYYY/DDMMYYYY/*.jpg
+chmod 755 backend/uploads/attendance/YYYY/MMYYYY
+chmod 644 backend/uploads/attendance/YYYY/MMYYYY/DDMMYYYY/*.jpg
 
 # Ensure only backend process can write
 chown -R backend-user:backend-group backend/uploads/
