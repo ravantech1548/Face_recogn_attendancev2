@@ -342,10 +342,10 @@ export default function AdminFaceAttendance() {
             // If play fails, try again after a longer delay
             setTimeout(async () => {
               try {
-                await videoRef.current.play()
-                setStreaming(true)
+        await videoRef.current.play()
+        setStreaming(true)
                 streamingRef.current = true
-                setActiveStep(1)
+        setActiveStep(1)
                 console.log('[STREAM] Video playing (retry), streaming set to true')
               } catch (retryError) {
                 console.error('Retry play error:', retryError)
@@ -885,13 +885,13 @@ export default function AdminFaceAttendance() {
       } else {
         console.log('[RECOGNIZE] No matching face found')
         if (!continuousMode) {
-          setError('No matching face found in database')
+        setError('No matching face found in database')
         }
       }
     } catch (e) {
       console.error('[RECOGNIZE] Recognition error:', e)
       if (!continuousMode) {
-        setError('Face recognition request failed: ' + e.message)
+      setError('Face recognition request failed: ' + e.message)
       }
     } finally {
       setIsRecognitionLoading(false)
@@ -1165,21 +1165,47 @@ export default function AdminFaceAttendance() {
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>Camera Feed</Typography>
-                <Box sx={{ position: 'relative', width: '100%' }}>
-                  <video 
-                    ref={videoRef} 
-                    style={{ 
-                      width: '100%', 
-                      maxHeight: '50vh', 
-                      background: '#000',
-                      borderRadius: 8,
+                <Box sx={{ position: 'relative', width: '100%', overflow: 'hidden', borderRadius: 2 }}>
+                <video 
+                  ref={videoRef} 
+                  style={{ 
+                    width: '100%', 
+                    maxHeight: '50vh', 
+                    background: '#000',
+                    borderRadius: 8,
                       boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
                       display: 'block'
-                    }} 
+                  }} 
                     autoPlay
-                    muted 
-                    playsInline 
-                  />
+                  muted 
+                  playsInline 
+                />
+                  
+                  {/* Face framing oval for operators */}
+                  {user?.role === 'operator' && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 5,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: { xs: '45%', sm: '38%', md: '32%' },
+                          maxWidth: 300,
+                          aspectRatio: '3 / 4',
+                          borderRadius: '50%',
+                          border: '3px solid rgba(255,255,255,0.9)',
+                          boxShadow: '0 0 0 9999px rgba(0,0,0,0.85)',
+                        }}
+                      />
+                    </Box>
+                  )}
                   
                   {/* Scanning overlay for continuous mode */}
                   {continuousMode && isRecognizing && (
@@ -1288,40 +1314,40 @@ export default function AdminFaceAttendance() {
 
                 {/* Control buttons - hidden for operators in continuous mode */}
                 {!(user?.role === 'operator' && continuousMode) && (
-                  <Box display="flex" gap={2} flexWrap="wrap" sx={{ mt: 2, justifyContent: 'center' }}>
-                    {!streaming ? (
-                      <Button variant="contained" onClick={startStream} size="large">
-                        Start Camera
-                      </Button>
-                    ) : (
+                <Box display="flex" gap={2} flexWrap="wrap" sx={{ mt: 2, justifyContent: 'center' }}>
+                  {!streaming ? (
+                    <Button variant="contained" onClick={startStream} size="large">
+                      Start Camera
+                    </Button>
+                  ) : (
                       <>
                         {user?.role === 'admin' && (
-                          <>
-                            <Button 
-                              variant="contained" 
-                              onClick={startLivenessDetection}
-                              disabled={livenessMode || isProcessing || isRecognitionLoading}
-                              size="large"
-                              startIcon={isRecognitionLoading ? <CircularProgress size={20} color="inherit" /> : null}
-                            >
-                              {livenessDetectionEnabled ? 'Start Liveness Detection' : 'Start Face Recognition'}
-                            </Button>
-                            <Button 
-                              variant="outlined" 
-                              onClick={captureAndRecognize}
-                              disabled={livenessMode || isProcessing || isRecognitionLoading}
-                              startIcon={isRecognitionLoading ? <CircularProgress size={16} color="inherit" /> : null}
-                            >
-                              {livenessDetectionEnabled ? 'Single Capture' : 'Quick Capture'}
-                            </Button>
+                    <>
+                      <Button 
+                        variant="contained" 
+                        onClick={startLivenessDetection}
+                        disabled={livenessMode || isProcessing || isRecognitionLoading}
+                        size="large"
+                        startIcon={isRecognitionLoading ? <CircularProgress size={20} color="inherit" /> : null}
+                      >
+                        {livenessDetectionEnabled ? 'Start Liveness Detection' : 'Start Face Recognition'}
+                      </Button>
+                      <Button 
+                        variant="outlined" 
+                        onClick={captureAndRecognize}
+                        disabled={livenessMode || isProcessing || isRecognitionLoading}
+                        startIcon={isRecognitionLoading ? <CircularProgress size={16} color="inherit" /> : null}
+                      >
+                        {livenessDetectionEnabled ? 'Single Capture' : 'Quick Capture'}
+                      </Button>
                           </>
                         )}
-                        <Button variant="outlined" onClick={stopStream}>
+                      <Button variant="outlined" onClick={stopStream}>
                           Stop Camera
-                        </Button>
-                      </>
-                    )}
-                  </Box>
+                      </Button>
+                    </>
+                  )}
+                </Box>
                 )}
               </CardContent>
             </Card>

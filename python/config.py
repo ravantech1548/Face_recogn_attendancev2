@@ -85,7 +85,7 @@ class ServiceConfig:
         # Face recognition settings
         self.face_detection_model = os.getenv('FACE_DETECTION_MODEL', 'hog')  # hog or cnn
         self.face_encoding_model = os.getenv('FACE_ENCODING_MODEL', 'large')  # small or large
-        self.face_distance_threshold = float(os.getenv('FACE_DISTANCE_THRESHOLD', '0.6'))
+        self.face_distance_threshold = float(os.getenv('FACE_DISTANCE_THRESHOLD', '0.5'))  # 0.5 = 50% min confidence
         self.face_jitters = int(os.getenv('FACE_JITTERS', '1'))
         
         # Cache settings
