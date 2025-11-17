@@ -28,6 +28,10 @@ import { useAuth } from '../context/AuthContext'
 import API_BASE_URL, { getRecognitionUrl, getRecognitionConfig } from '../config/api'
 import toast from 'react-hot-toast'
 
+const CAMERA_STORAGE_KEY = 'faceapp_camera_in_use'
+const CAMERA_CLAIM_TTL = 5000
+const CAMERA_HEARTBEAT_INTERVAL = 2000
+
 export default function AdminFaceAttendance() {
   const { user } = useAuth()
   const videoRef = useRef(null)
@@ -36,6 +40,8 @@ export default function AdminFaceAttendance() {
   const intervalRef = useRef(null)
   
   const [error, setError] = useState('')
+  const [cameraWarning, setCameraWarning] = useState('')
+  const [cameraError, setCameraError] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [lastResult, setLastResult] = useState(null)
   const [livenessMode, setLivenessMode] = useState(false)
@@ -68,6 +74,10 @@ export default function AdminFaceAttendance() {
   const streamingRef = useRef(false) // Use ref to avoid closure issues
   const isRecognizingRef = useRef(false) // Use ref for isRecognizing too
   const recentAttendanceMarks = useRef(new Map()) // Track recent attendance marks: staffId -> timestamp
+  const conflictNotifiedRef = useRef(false)
+  const cameraHeartbeatRef = useRef(null)
+  const cameraOwnerRef = useRef(null)
+  const windowIdRef = useRef(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`)
 
   // Update the cooldown display list
   const updateCooldownList = () => {
@@ -89,6 +99,205 @@ export default function AdminFaceAttendance() {
     
     setCooldownList(list)
   }
+
+  const readCameraClaim = () => {
+    if (typeof window === 'undefined' || !window?.localStorage) return null
+    const raw = window.localStorage.getItem(CAMERA_STORAGE_KEY)
+    if (!raw) return null
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        return parsed
+      }
+      return null
+    } catch (err) {
+      console.warn('[CAMERA] Failed to parse camera claim:', err)
+      return null
+    }
+  }
+
+  const refreshCameraClaim = () => {
+    if (typeof window === 'undefined' || !window?.localStorage) return
+    if (cameraOwnerRef.current !== windowIdRef.current) return
+    window.localStorage.setItem(
+      CAMERA_STORAGE_KEY,
+      JSON.stringify({
+        owner: windowIdRef.current,
+        timestamp: Date.now()
+      })
+    )
+  }
+
+  const stopCameraHeartbeat = () => {
+    if (cameraHeartbeatRef.current) {
+      clearInterval(cameraHeartbeatRef.current)
+      cameraHeartbeatRef.current = null
+    }
+  }
+
+  const startCameraHeartbeat = () => {
+    if (cameraOwnerRef.current !== windowIdRef.current) return
+    stopCameraHeartbeat()
+    refreshCameraClaim()
+    cameraHeartbeatRef.current = window.setInterval(() => {
+      refreshCameraClaim()
+    }, CAMERA_HEARTBEAT_INTERVAL)
+  }
+
+  const releaseCameraClaim = () => {
+    stopCameraHeartbeat()
+    if (typeof window !== 'undefined' && window?.localStorage) {
+      const claim = readCameraClaim()
+      if (claim?.owner === windowIdRef.current) {
+        window.localStorage.removeItem(CAMERA_STORAGE_KEY)
+      }
+    }
+    cameraOwnerRef.current = null
+  }
+
+  const claimCamera = () => {
+    if (typeof window === 'undefined' || !window?.localStorage) {
+      cameraOwnerRef.current = windowIdRef.current
+      return true
+    }
+
+    const existing = readCameraClaim()
+    if (existing?.owner && existing.owner !== windowIdRef.current) {
+      const age = Date.now() - (existing.timestamp || 0)
+      if (age < CAMERA_CLAIM_TTL) {
+        cameraOwnerRef.current = existing.owner
+        return false
+      }
+    }
+
+    cameraOwnerRef.current = windowIdRef.current
+    refreshCameraClaim()
+    return true
+  }
+
+  const markStreamingActive = (step = 1) => {
+    if (cameraOwnerRef.current === windowIdRef.current) {
+      if (cameraHeartbeatRef.current) {
+        refreshCameraClaim()
+      } else {
+        startCameraHeartbeat()
+      }
+    }
+    setError('')
+    setCameraError('')
+    setStreaming(true)
+    streamingRef.current = true
+    setCameraWarning('')
+    conflictNotifiedRef.current = false
+    if (typeof step === 'number') {
+      setActiveStep(step)
+    }
+  }
+
+  const handleCameraInterruption = (reason = 'unknown') => {
+    if (conflictNotifiedRef.current) {
+      return
+    }
+
+    conflictNotifiedRef.current = true
+    releaseCameraClaim()
+    console.warn('[STREAM] Camera stream interrupted (reason:', reason, ')')
+    setStreaming(false)
+    streamingRef.current = false
+    setActiveStep(0)
+    setCameraError('🚫 Camera resource is now occupied by another window or application. Close the other window and restart the camera here.')
+    setCameraWarning('')
+    const currentStream = videoRef.current?.srcObject
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => {
+        track.onended = null
+        track.onmute = null
+        track.onunmute = null
+        if (track.readyState !== 'ended') {
+          track.stop()
+        }
+      })
+      currentStream.oninactive = null
+      currentStream.onremovetrack = null
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+      }
+    }
+    toast.error('Camera stream stopped. Another window is trying to use the camera.')
+  }
+
+  const attachStreamLifecycleHandlers = (stream) => {
+    if (!stream) return
+    stream.oninactive = () => handleCameraInterruption('stream-inactive')
+    stream.onremovetrack = () => handleCameraInterruption('stream-removed')
+    stream.getTracks().forEach(track => {
+      track.onended = () => handleCameraInterruption('track-ended')
+      track.onmute = () => {
+        console.warn('[STREAM] Camera track muted. Another application may be trying to use the camera.')
+        setCameraWarning('⚠️ Camera resource paused because another window may be trying to access it. Close the other window to resume.')
+      }
+      track.onunmute = () => {
+        console.log('[STREAM] Camera track resumed.')
+        setCameraWarning('')
+      }
+    })
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const existingClaim = readCameraClaim()
+    if (existingClaim?.owner && existingClaim.owner !== windowIdRef.current) {
+      const age = Date.now() - (existingClaim.timestamp || 0)
+      if (age < CAMERA_CLAIM_TTL) {
+        setCameraError('🚫 Camera resource is already in use in another window. Close that window before starting the camera here.')
+        setCameraWarning('')
+      }
+    }
+
+    const handleStorageEvent = (event) => {
+      if (event.key !== CAMERA_STORAGE_KEY) return
+
+      if (!event.newValue) {
+        if (!streamingRef.current) {
+          setCameraError('')
+          setCameraWarning('')
+          conflictNotifiedRef.current = false
+        }
+        return
+      }
+
+      try {
+        const data = JSON.parse(event.newValue)
+        if (data?.owner && data.owner !== windowIdRef.current) {
+          cameraOwnerRef.current = data.owner
+          if (streamingRef.current) {
+            handleCameraInterruption('external-window-claimed')
+          } else {
+            setCameraError('🚫 Camera resource is already in use in another window. Close that window before starting the camera here.')
+            setCameraWarning('')
+            conflictNotifiedRef.current = false
+          }
+        }
+      } catch (err) {
+        console.warn('[CAMERA] Failed to parse storage event payload:', err)
+      }
+    }
+
+    const handleBeforeUnload = () => {
+      releaseCameraClaim()
+    }
+
+    window.addEventListener('storage', handleStorageEvent)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageEvent)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      releaseCameraClaim()
+    }
+  }, [])
 
   const showSuccessPopup = (staffName, staffId, confidence, attendanceType) => {
     setSuccessPopup({
@@ -294,11 +503,22 @@ export default function AdminFaceAttendance() {
 
   async function startStream() {
     setError('')
+    setCameraError('')
     setActiveStep(0)
+    setCameraWarning('')
+    conflictNotifiedRef.current = false
+
+    if (!claimCamera()) {
+      setCameraError('🚫 Camera resource is already in use in another window. Close the other window, then start the camera again here.')
+      setCameraWarning('')
+      toast.error('Camera resource is already in use in another window.')
+      return
+    }
     
     // Check if browser supports camera access
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setError('❌ Camera not supported in this browser. Please use Chrome, Firefox, or Edge.')
+      releaseCameraClaim()
       return
     }
     
@@ -315,12 +535,20 @@ export default function AdminFaceAttendance() {
         // Stop any existing stream first
         const existingStream = videoRef.current.srcObject
         if (existingStream) {
-          existingStream.getTracks().forEach(track => track.stop())
+          existingStream.getTracks().forEach(track => {
+            track.onended = null
+            track.onmute = null
+            track.onunmute = null
+            track.stop()
+          })
+          existingStream.oninactive = null
+          existingStream.onremovetrack = null
         }
         
         // Set new stream
         videoRef.current.srcObject = stream
-        
+        attachStreamLifecycleHandlers(stream)
+
         // Wait for video to be ready before playing
         videoRef.current.onloadedmetadata = async () => {
           try {
@@ -332,27 +560,24 @@ export default function AdminFaceAttendance() {
             
             if (playPromise !== undefined) {
               await playPromise
-              setStreaming(true)
-              streamingRef.current = true
-              setActiveStep(1)
-              console.log('[STREAM] Video playing, streaming set to true')
             }
+            markStreamingActive(1)
+            console.log('[STREAM] Video playing, streaming set to true')
           } catch (playError) {
             console.error('Video play error:', playError)
             // If play fails, try again after a longer delay
             setTimeout(async () => {
               try {
-        await videoRef.current.play()
-        setStreaming(true)
-                streamingRef.current = true
-        setActiveStep(1)
+                const retryPromise = videoRef.current.play()
+                if (retryPromise !== undefined) {
+                  await retryPromise
+                }
+                markStreamingActive(1)
                 console.log('[STREAM] Video playing (retry), streaming set to true')
               } catch (retryError) {
                 console.error('Retry play error:', retryError)
                 // Still set streaming to true if we have the stream
-                setStreaming(true)
-                streamingRef.current = true
-                setActiveStep(1)
+                markStreamingActive(1)
                 console.log('[STREAM] Video has stream even with play error, streaming set to true')
               }
             }, 500)
@@ -376,24 +601,26 @@ export default function AdminFaceAttendance() {
           const simpleStream = await navigator.mediaDevices.getUserMedia({ video: true })
           if (videoRef.current) {
             videoRef.current.srcObject = simpleStream
+            attachStreamLifecycleHandlers(simpleStream)
             videoRef.current.onloadedmetadata = async () => {
               try {
-                await videoRef.current.play()
-                setStreaming(true)
-                streamingRef.current = true
-                setActiveStep(1)
+                const simplePlayPromise = videoRef.current.play()
+                if (simplePlayPromise !== undefined) {
+                  await simplePlayPromise
+                }
+                markStreamingActive(1)
                 setError('')
                 console.log('[STREAM] Video playing (simple mode), streaming set to true')
               } catch (playError) {
-                setStreaming(true)
-                streamingRef.current = true
-                setActiveStep(1)
+                console.error('Simple mode play error:', playError)
+                markStreamingActive(1)
                 setError('')
                 console.log('[STREAM] Video has stream (simple mode with play error), streaming set to true')
               }
             }
           }
         } catch (retryError) {
+          releaseCameraClaim()
           setError('❌ Unable to access camera. Please check camera permissions and try again.')
         }
       } else if (e.name === 'SecurityError') {
@@ -402,21 +629,29 @@ export default function AdminFaceAttendance() {
         // Ignore play() interruption errors - camera still works
         if (e.message && e.message.includes('play() request was interrupted')) {
           console.warn('Play interrupted but continuing anyway')
-          setStreaming(true)
-          streamingRef.current = true
-          setActiveStep(1)
+          markStreamingActive(1)
           console.log('[STREAM] Play interrupted but stream exists, streaming set to true')
         } else {
+          releaseCameraClaim()
           setError(`❌ Unable to access camera: ${e.message || 'Unknown error'}. Please check permissions and try again.`)
         }
       }
+    }
+
+    if (!streamingRef.current) {
+      releaseCameraClaim()
     }
   }
 
   function stopStream() {
     console.log('[STREAM] Stopping camera stream')
+    releaseCameraClaim()
+    setError('')
+    setCameraError('')
     setStreaming(false)
     streamingRef.current = false
+    setCameraWarning('')
+    conflictNotifiedRef.current = false
     setLivenessMode(false)
     setCapturedFrames([])
     setActiveStep(0)
@@ -425,7 +660,14 @@ export default function AdminFaceAttendance() {
     }
     const stream = videoRef.current?.srcObject
     if (stream) {
-      stream.getTracks().forEach((t) => t.stop())
+      stream.getTracks().forEach((t) => {
+        t.onended = null
+        t.onmute = null
+        t.onunmute = null
+        t.stop()
+      })
+      stream.oninactive = null
+      stream.onremovetrack = null
       if (videoRef.current) videoRef.current.srcObject = null
     }
     console.log('[STREAM] Camera stream stopped, streaming set to false')
@@ -1072,7 +1314,6 @@ export default function AdminFaceAttendance() {
       <Paper sx={{ p: { xs: 2, sm: 3 } }}>
         <Typography variant="h5" gutterBottom>Face Recognition Attendance with Liveness Detection</Typography>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        
         {/* Liveness Detection Toggle */}
         <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
           <FormControlLabel
@@ -1164,6 +1405,12 @@ export default function AdminFaceAttendance() {
           <Grid item xs={12} sm={10} md={8} lg={6}>
             <Card>
               <CardContent>
+                {(cameraError || cameraWarning) && (
+                  <Box sx={{ mb: 2 }}>
+                    {cameraError && <Alert severity="error" sx={{ mb: cameraWarning ? 1 : 0 }}>{cameraError}</Alert>}
+                    {cameraWarning && <Alert severity="warning">{cameraWarning}</Alert>}
+                  </Box>
+                )}
                 <Typography variant="h6" gutterBottom>Camera Feed</Typography>
                 <Box sx={{ position: 'relative', width: '100%', overflow: 'hidden', borderRadius: 2 }}>
                 <video 
