@@ -7,6 +7,7 @@ import logging
 import traceback
 from typing import Dict, List, Tuple
 from contextlib import contextmanager
+from threading import Lock
 
 from flask import Flask, request, jsonify
 from PIL import Image
@@ -201,12 +202,41 @@ class FaceStore:
         self.staff_ids: List[str] = []
         self.staff_meta: Dict[str, Dict[str, str]] = {}
         self.last_loaded = 0.0
+        self.version = 0
+        self._lock = Lock()
 
     def ensure_loaded(self, force: bool = False):
+        cache_ttl = getattr(config.service, "cache_ttl", 0)
         now = time.time()
-        if force or (now - self.last_loaded > 60) or not self.encodings:
+        needs_reload = (
+            force
+            or not self.encodings
+            or (cache_ttl > 0 and (now - self.last_loaded) > cache_ttl)
+        )
+
+        if not needs_reload:
+            return
+
+        with self._lock:
+            # Re-check inside lock in case another thread refreshed already
+            now = time.time()
+            needs_reload = (
+                force
+                or not self.encodings
+                or (cache_ttl > 0 and (now - self.last_loaded) > cache_ttl)
+            )
+            if not needs_reload:
+                return
+
+            logger.info("Refreshing known face cache%s", " (forced)" if force else "")
             self.encodings, self.staff_ids, self.staff_meta = load_known_faces()
             self.last_loaded = now
+            self.version += 1
+            logger.info(
+                "Known face cache ready with %d entries (version %d)",
+                len(self.staff_ids),
+                self.version,
+            )
 
 
 store = FaceStore()

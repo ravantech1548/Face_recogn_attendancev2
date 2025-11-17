@@ -88,8 +88,8 @@ class ServiceConfig:
         self.face_distance_threshold = float(os.getenv('FACE_DISTANCE_THRESHOLD', '0.5'))  # 0.5 = 50% min confidence
         self.face_jitters = int(os.getenv('FACE_JITTERS', '1'))
         
-        # Cache settings
-        self.cache_ttl = int(os.getenv('CACHE_TTL_SECONDS', '60'))
+        # Cache settings (0 = keep indefinitely until manual reload)
+        self.cache_ttl = int(os.getenv('CACHE_TTL_SECONDS', '0'))
         self.max_cache_size = int(os.getenv('MAX_CACHE_SIZE', '100'))
         
         # Upload settings

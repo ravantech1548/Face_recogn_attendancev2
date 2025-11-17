@@ -4,8 +4,11 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const pool = require('../config/database');
+const auth = require('../middleware/auth');
 
 const router = express.Router();
+const parsedStaleMinutes = parseInt(process.env.SESSION_STALE_MINUTES || '15', 10);
+const SESSION_STALE_MINUTES = Number.isFinite(parsedStaleMinutes) && parsedStaleMinutes > 0 ? parsedStaleMinutes : 15;
 
 router.post(
   '/register',
@@ -59,10 +62,52 @@ router.post(
       if (!isValidPassword) {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
+
+      // Cleanup expired or stale sessions for this user
+      await pool.query(
+        `
+          UPDATE user_sessions
+          SET is_active = FALSE, revoked_at = NOW()
+          WHERE user_id = $1
+            AND is_active = TRUE
+            AND (
+              expires_at < NOW()
+              OR (
+                last_seen_at IS NOT NULL
+                AND last_seen_at < NOW() - INTERVAL '${SESSION_STALE_MINUTES} minutes'
+              )
+            )
+        `,
+        [user.user_id]
+      );
+
+      // Prevent duplicate active sessions
+      const activeSession = await pool.query(
+        'SELECT session_id FROM user_sessions WHERE user_id = $1 AND is_active = TRUE LIMIT 1',
+        [user.user_id]
+      );
+
+      if (activeSession.rows.length > 0) {
+        return res.status(409).json({
+          message: 'This account is already active on another device. Please log out from the other session before signing in again.',
+        });
+      }
+
+      const sessionId = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      await pool.query(
+        `
+          INSERT INTO user_sessions (session_id, user_id, expires_at, last_seen_at)
+          VALUES ($1, $2, $3, NOW())
+        `,
+        [sessionId, user.user_id, expiresAt]
+      );
+
       const token = jwt.sign(
         { userId: user.user_id, username: user.username, role: user.role },
         process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: '24h' }
+        { expiresIn: '24h', jwtid: sessionId }
       );
       return res.json({
         message: 'Login successful',
@@ -75,6 +120,29 @@ router.post(
     }
   }
 );
+
+router.post('/logout', auth, async (req, res) => {
+  try {
+    const sessionId = req.sessionId;
+    if (!sessionId) {
+      return res.status(400).json({ message: 'No active session found for logout' });
+    }
+
+    await pool.query(
+      `
+        UPDATE user_sessions
+        SET is_active = FALSE, revoked_at = NOW()
+        WHERE session_id = $1
+      `,
+      [sessionId]
+    );
+
+    return res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Request password reset
 router.post(

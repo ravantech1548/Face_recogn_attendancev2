@@ -53,11 +53,17 @@ export function AuthProvider({ children }) {
     }
   }
 
-  function logout() {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    delete axios.defaults.headers.common['Authorization']
-    setUser(null)
+  async function logout() {
+    try {
+      await axios.post(`${API_BASE_URL}/api/auth/logout`)
+    } catch (error) {
+      console.warn('AuthContext: Logout request failed', error?.response?.data || error.message)
+    } finally {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      delete axios.defaults.headers.common['Authorization']
+      setUser(null)
+    }
   }
 
   return (
