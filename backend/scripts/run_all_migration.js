@@ -90,6 +90,7 @@ async function runAllMigrations() {
       'migration_add_on_duty_enabled.sql',
       'migration_add_overtime_enabled.sql',
       'migration_add_ot_threshold.sql',
+      'migration_add_global_settings.sql',
       'migration_add_staff_work_fields.sql',
       'migration_add_password_reset.sql'
     ];

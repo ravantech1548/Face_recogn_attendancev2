@@ -11,6 +11,7 @@ const authRoutes = require('./src/routes/auth');
 const staffRoutes = require('./src/routes/staff');
 const attendanceRoutes = require('./src/routes/attendance');
 const usersRoutes = require('./src/routes/users');
+const settingsRoutes = require('./src/routes/settings');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,6 +27,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health
 app.get('/api/health', (req, res) => {

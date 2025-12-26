@@ -60,6 +60,8 @@ export default function Navbar() {
                 <Button color="inherit" onClick={() => navigate('/staff')}>Staff</Button>
                 <Button color="inherit" onClick={() => navigate('/attendance/face')}>Face Attendance</Button>
                 <Button color="inherit" onClick={() => navigate('/attendance')}>Attendance Report</Button>
+                <Button color="inherit" onClick={() => navigate('/attendance-actions')}>Attendance and Leave Actions</Button>
+                <Button color="inherit" onClick={() => navigate('/settings')}>Settings</Button>
               </>
             )}
             

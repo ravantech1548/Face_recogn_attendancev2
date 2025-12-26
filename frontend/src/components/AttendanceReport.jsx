@@ -22,15 +22,14 @@ import {
   FormControl,
   InputLabel,
   Select,
-  Switch,
-  FormControlLabel,
   Radio,
   RadioGroup,
   FormLabel,
+  FormControlLabel,
   IconButton,
 } from '@mui/material'
 import { Download as DownloadIcon } from '@mui/icons-material'
-import { useQuery, useMutation, useQueryClient } from 'react-query'
+import { useQuery, useQueryClient } from 'react-query'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
@@ -72,20 +71,12 @@ export default function AttendanceReport() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [staffIdFilter, setStaffIdFilter] = useState('')
-  const [actionStaffId, setActionStaffId] = useState('')
   const [selectedImage, setSelectedImage] = useState(null)
   const [imageModalOpen, setImageModalOpen] = useState(false)
-  const [useCustomDateTime, setUseCustomDateTime] = useState(false)
-  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0])
-  const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5))
   const [dateFilter, setDateFilter] = useState('current_month') // 'current_month', 'last_month', 'all'
   const [isExporting, setIsExporting] = useState(false)
-  const [allowOverwrite, setAllowOverwrite] = useState(false)
-  
-  // Manual attendance reason fields
-  const [manualReason, setManualReason] = useState('')
-  const [manualNotes, setManualNotes] = useState('')
 
+  // Fetch staff list (needed for staff filter dropdown)
   const { data: staffList } = useQuery('staff', async () => {
     const res = await axios.get(`${API_BASE_URL}/api/staff`)
     return res.data
@@ -171,65 +162,6 @@ export default function AttendanceReport() {
     }
   )
 
-  const checkIn = useMutation(
-    async ({ staffId, customDateTime, attendanceNotes, manualReason, overwrite }) => {
-      const payload = { staffId }
-      if (customDateTime) {
-        payload.customDateTime = customDateTime
-      }
-      if (attendanceNotes) {
-        payload.attendanceNotes = attendanceNotes
-      }
-      if (manualReason) {
-        payload.manualReason = manualReason
-      }
-      if (overwrite) {
-        payload.overwrite = overwrite
-      }
-      return axios.post(`${API_BASE_URL}/api/attendance/check-in`, payload)
-    },
-    {
-      onSuccess: (response) => {
-        const message = response.data.overwritten ? 
-          'Check-in time updated successfully' : 
-          'Check-in recorded'
-        toast.success(message)
-        queryClient.invalidateQueries('attendance')
-        // Clear manual reason fields after successful check-in
-        setManualReason('')
-        setManualNotes('')
-        setAllowOverwrite(false) // Reset overwrite flag
-      },
-      onError: (err) => toast.error(err.response?.data?.message || 'Check-in failed'),
-    }
-  )
-
-  const checkOut = useMutation(
-    async ({ staffId, customDateTime, overwrite }) => {
-      const payload = { staffId }
-      if (customDateTime) {
-        payload.customDateTime = customDateTime
-      }
-      if (overwrite) {
-        payload.overwrite = overwrite
-      }
-      return axios.post(`${API_BASE_URL}/api/attendance/check-out`, payload)
-    },
-    {
-      onSuccess: (response) => {
-        const message = response.data.overwritten ? 
-          'Check-out time updated successfully' : 
-          'Check-out recorded'
-        toast.success(message)
-        queryClient.invalidateQueries('attendance')
-        // Don't clear manual reason fields for check-out
-        // They should remain for the same day's attendance
-        setAllowOverwrite(false) // Reset overwrite flag
-      },
-      onError: (err) => toast.error(err.response?.data?.message || 'Check-out failed'),
-    }
-  )
-
   const handleImageClick = (imagePath, confidenceScore) => {
     if (imagePath) {
       setSelectedImage({
@@ -243,81 +175,6 @@ export default function AttendanceReport() {
   const closeImageModal = () => {
     setImageModalOpen(false)
     setSelectedImage(null)
-  }
-
-  const handleCheckIn = () => {
-    if (!actionStaffId) {
-      toast.error('Please select a staff member')
-      return
-    }
-    
-    if (!manualReason) {
-      toast.error('Please select a reason for manual entry')
-      return
-    }
-    
-    if (manualReason === 'others' && !manualNotes.trim()) {
-      toast.error('Please provide details for "Others" reason')
-      return
-    }
-    
-    const customDateTime = useCustomDateTime ? `${customDate}T${customTime}:00` : null
-    const attendanceNotes = manualReason === 'others' ? manualNotes : `${manualReason.replace('_', ' ').toUpperCase()}`
-    
-    checkIn.mutate({ 
-      staffId: actionStaffId, 
-      customDateTime,
-      attendanceNotes,
-      manualReason,
-      overwrite: allowOverwrite
-    })
-  }
-
-  const handleCheckOut = () => {
-    if (!actionStaffId) {
-      toast.error('Please select a staff member')
-      return
-    }
-    
-    const customDateTime = useCustomDateTime ? `${customDate}T${customTime}:00` : null
-    
-    checkOut.mutate({ 
-      staffId: actionStaffId, 
-      customDateTime,
-      overwrite: allowOverwrite
-      // No manualReason or attendanceNotes needed for check-out
-      // The check-out will use the existing reason from check-in
-    })
-  }
-
-  const resetCustomDateTime = () => {
-    setCustomDate(new Date().toISOString().split('T')[0])
-    setCustomTime(new Date().toTimeString().slice(0, 5))
-  }
-
-  // Get available manual attendance reasons based on selected staff
-  const getAvailableReasons = () => {
-    const baseReasons = [
-      { value: 'face_detection_failure', label: 'Face Detection Failure' },
-      { value: 'others', label: 'Others' }
-    ]
-
-    // Add conditional options based on staff settings
-    if (actionStaffId && staffList) {
-      const selectedStaff = staffList.find(s => s.staff_id === actionStaffId)
-      
-      // Add Work From Home option only if selected staff has WFH enabled
-      if (selectedStaff?.work_from_home_enabled) {
-        baseReasons.unshift({ value: 'work_from_home', label: 'Work From Home' })
-      }
-      
-      // Add On Duty option only if selected staff has ON DUTY enabled
-      if (selectedStaff?.on_duty_enabled !== false) { // Default to true if not set
-        baseReasons.unshift({ value: 'on_duty', label: 'On Duty' })
-      }
-    }
-
-    return baseReasons
   }
 
   // Helper function to convert hh:mm format to decimal hours
@@ -421,185 +278,6 @@ export default function AttendanceReport() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 3 }}>
-      
-      {user?.role === 'admin' && (
-        <Paper sx={{ p: 2, mb: 2 }}>
-          <Typography variant="h6" gutterBottom>Attendance Actions</Typography>
-          
-          {/* Custom DateTime Toggle */}
-          <Box sx={{ mb: 2, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={useCustomDateTime}
-                  onChange={(e) => {
-                    setUseCustomDateTime(e.target.checked)
-                    if (e.target.checked) {
-                      resetCustomDateTime()
-                    }
-                  }}
-                  color="primary"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  Use custom date/time for backdating attendance
-                </Typography>
-              }
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={allowOverwrite}
-                  onChange={(e) => setAllowOverwrite(e.target.checked)}
-                  color="warning"
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  Allow overwrite of existing check-in/checkout times
-                </Typography>
-              }
-            />
-          </Box>
-
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} sm={6} md={3}>
-              <TextField
-                select
-                fullWidth
-                label="Select Staff"
-                value={actionStaffId}
-                onChange={(e) => setActionStaffId(e.target.value)}
-              >
-                {staffList?.map((s) => (
-                  <MenuItem key={s.staff_id} value={s.staff_id}>
-                    {s.full_name} ({s.staff_id})
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-
-            {useCustomDateTime && (
-              <>
-                <Grid item xs={6} sm={3} md={2}>
-                  <TextField
-                    type="date"
-                    fullWidth
-                    label="Date"
-                    value={customDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
-                </Grid>
-                <Grid item xs={6} sm={3} md={2}>
-                  <TextField
-                    type="time"
-                    fullWidth
-                    label="Time"
-                    value={customTime}
-                    onChange={(e) => setCustomTime(e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                    inputProps={{ step: 300 }} // 5 minute intervals
-                  />
-                </Grid>
-              </>
-            )}
-
-            {/* Manual Attendance Reason Section */}
-            <Grid item xs={12}>
-              <Divider sx={{ my: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Manual Entry Reason (Check-in Only)
-                </Typography>
-              </Divider>
-            </Grid>
-
-            <Grid item xs={12} sm={6} md={4}>
-              <TextField
-                select
-                fullWidth
-                label="Reason for Manual Entry"
-                value={manualReason}
-                onChange={(e) => {
-                  setManualReason(e.target.value)
-                  if (e.target.value !== 'others') {
-                    setManualNotes('')
-                  }
-                }}
-                required
-              >
-                {getAvailableReasons().map((reason) => (
-                  <MenuItem key={reason.value} value={reason.value}>
-                    {reason.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-
-            {manualReason === 'others' && (
-              <Grid item xs={12} sm={6} md={4}>
-                <TextField
-                  fullWidth
-                  label="Please specify reason"
-                  value={manualNotes}
-                  onChange={(e) => setManualNotes(e.target.value)}
-                  placeholder="Enter details for manual entry..."
-                  multiline
-                  rows={2}
-                  required
-                />
-              </Grid>
-            )}
-
-            {/* Info box explaining the behavior */}
-            <Grid item xs={12}>
-              <Box sx={{ mt: 1, p: 1, backgroundColor: 'info.light', borderRadius: 1 }}>
-                <Typography variant="caption" color="info.dark">
-                  💡 <strong>Note:</strong> Manual entry reason is only required for check-in. Check-out will use the same reason from the check-in for the same day.
-                </Typography>
-              </Box>
-            </Grid>
-
-            <Grid item xs={12} sm={'auto'}>
-              <Button
-                variant="contained"
-                disabled={!actionStaffId || !manualReason || checkIn.isLoading}
-                onClick={handleCheckIn}
-              >
-                {checkIn.isLoading ? 'Checking in...' : 'Check In'}
-              </Button>
-            </Grid>
-            <Grid item xs={12} sm={'auto'}>
-              <Button
-                variant="outlined"
-                disabled={!actionStaffId || checkOut.isLoading}
-                onClick={handleCheckOut}
-              >
-                {checkOut.isLoading ? 'Checking out...' : 'Check Out'}
-              </Button>
-            </Grid>
-          </Grid>
-
-          {useCustomDateTime && (
-            <Box sx={{ mt: 2, p: 1, backgroundColor: 'info.light', borderRadius: 1 }}>
-              <Typography variant="caption" color="info.dark">
-                💡 <strong>Backdating Mode:</strong> Attendance will be recorded for {customDate} at {customTime}
-              </Typography>
-            </Box>
-          )}
-          
-          {allowOverwrite && (
-            <Box sx={{ mt: 2, p: 1, backgroundColor: 'warning.light', borderRadius: 1 }}>
-              <Typography variant="caption" color="warning.dark">
-                ⚠️ <strong>Overwrite Mode Enabled:</strong> This will update existing check-in/checkout times for the selected date. 
-                Use this to correct attendance records when face recognition captured incorrect times (e.g., when check-in failed and checkout was captured as check-in).
-              </Typography>
-            </Box>
-          )}
-        </Paper>
-      )}
-
       <Paper sx={{ p: 2 }}>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
           <Typography variant="h6">Attendance Report</Typography>
@@ -734,7 +412,14 @@ export default function AttendanceReport() {
               <Grid item xs={12} sm={6} md={2}>
                 <Box sx={{ textAlign: 'center', p: 1 }}>
                   <Typography variant="h4" color="primary">
-                    {attendance.filter(a => a.total_hours).length}
+                    {attendance.filter(a => {
+                      // Exclude leave days from days worked count
+                      // Leave days have status as leave types or total_hours as '00:00'
+                      const isLeaveStatus = a.status && ['casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave'].includes(a.status)
+                      const isZeroHours = a.total_hours === '00:00' || a.total_hours === null || a.total_hours === undefined
+                      // Count as worked if total_hours exists, is not '00:00', and status is not a leave type
+                      return a.total_hours && !isZeroHours && !isLeaveStatus
+                    }).length}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Days Worked
