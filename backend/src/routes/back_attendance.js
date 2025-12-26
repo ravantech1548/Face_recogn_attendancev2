@@ -8,24 +8,13 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const pool = require('../config/database');
 const auth = require('../middleware/auth');
 const requireAdmin = require('../middleware/requireAdmin');
-const requireAdminOrOperator = require('../middleware/requireAdminOrOperator');
 
 const router = express.Router();
 
-// Configure multer for face image uploads with organized folder structure
+// Configure multer for face image uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Get current date
-    const now = new Date();
-    const year = now.getFullYear().toString(); // YYYY
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const monthFolder = `${month}${year}`; // MMYYYY
-    const dateFolder = `${day}${month}${year}`; // DDMMYYYY
-    
-    // Create hierarchical folder structure: uploads/attendance/YYYY/MMYYYY/DDMMYYYY
-    const uploadDir = path.join(__dirname, '../../uploads/attendance', year, monthFolder, dateFolder);
-    
+    const uploadDir = path.join(__dirname, '../../uploads/attendance');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -54,29 +43,21 @@ const upload = multer({
   }
 });
 
-// Record check-in (Admin only - for manual attendance entry)
+// Record check-in
 router.post(
   '/check-in',
-  [auth, requireAdmin, body('staffId').notEmpty().withMessage('staffId is required')],
+  [auth, body('staffId').notEmpty().withMessage('staffId is required')],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-      const { staffId, customDateTime, attendanceNotes, manualReason, overwrite } = req.body;
+      const { staffId, customDateTime, attendanceNotes, manualReason } = req.body;
       
-      // Use custom datetime if provided, otherwise use database timezone
-      let checkInTime, dateStr;
-      if (customDateTime) {
-        checkInTime = new Date(customDateTime);
-        dateStr = checkInTime.toISOString().slice(0, 10);
-      } else {
-        // Use database timezone for consistency
-        const timeRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today');
-        checkInTime = new Date(timeRes.rows[0].now);
-        dateStr = timeRes.rows[0].today;
-      }
+      // Use custom datetime if provided, otherwise use current time
+      const checkInTime = customDateTime ? new Date(customDateTime) : new Date();
+      const dateStr = checkInTime.toISOString().slice(0, 10);
 
       // Validate custom datetime if provided
       if (customDateTime) {
@@ -99,53 +80,18 @@ router.post(
 
       // Check if already checked-in for the specified date
       const existing = await pool.query(
-        'SELECT attendance_id, check_out_time FROM attendance WHERE staff_id = $1 AND date = $2',
+        'SELECT attendance_id FROM attendance WHERE staff_id = $1 AND date = $2',
         [staffId, dateStr]
       );
+
+      if (existing.rows.length > 0) {
+        return res.status(400).json({ message: `Already checked in on ${dateStr}` });
+      }
 
       // Set work_from_home flag based on manual reason
       const isWorkFromHome = manualReason === 'work_from_home'
       const finalNotes = manualReason === 'others' ? attendanceNotes : attendanceNotes
 
-      if (existing.rows.length > 0) {
-        // If overwrite flag is set, allow manual update of check-in time
-        if (overwrite === true || overwrite === 'true') {
-          const attendanceId = existing.rows[0].attendance_id;
-          const existingCheckOut = existing.rows[0].check_out_time;
-          
-          // If there's a checkout time, validate that new check-in is before it
-          if (existingCheckOut) {
-            const checkOutTime = new Date(existingCheckOut);
-            if (checkInTime >= checkOutTime) {
-              return res.status(400).json({ 
-                message: 'Manual check-in time must be before existing check-out time',
-                checkInTime: checkInTime.toLocaleString(),
-                checkOutTime: checkOutTime.toLocaleString()
-              });
-            }
-          }
-          
-          // Update the existing record
-          const result = await pool.query(
-            `UPDATE attendance 
-             SET check_in_time = $2, attendance_notes = $3, work_from_home = $4
-             WHERE attendance_id = $1 RETURNING *`,
-            [attendanceId, checkInTime, finalNotes, isWorkFromHome]
-          );
-          
-          const message = customDateTime ? 
-            `Check-in time updated for ${dateStr} to ${checkInTime.toLocaleTimeString()} (manual overwrite)` : 
-            'Check-in time updated (manual overwrite)';
-            
-          return res.status(200).json({ message, attendance: result.rows[0], overwritten: true });
-        } else {
-          return res.status(400).json({ 
-            message: `Already checked in on ${dateStr}. Use 'overwrite: true' to update the check-in time.` 
-          });
-        }
-      }
-
-      // Create new check-in record
       const result = await pool.query(
         `INSERT INTO attendance (staff_id, check_in_time, date, status, attendance_notes, work_from_home)
          VALUES ($1, $2, $3, 'present', $4, $5) RETURNING *`,
@@ -164,29 +110,21 @@ router.post(
   }
 );
 
-// Record check-out (Admin only - for manual attendance entry)
+// Record check-out
 router.post(
   '/check-out',
-  [auth, requireAdmin, body('staffId').notEmpty().withMessage('staffId is required')],
+  [auth, body('staffId').notEmpty().withMessage('staffId is required')],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
-      const { staffId, customDateTime, overwrite } = req.body;
+      const { staffId, customDateTime } = req.body;
       
-      // Use custom datetime if provided, otherwise use database timezone
-      let checkOutTime, dateStr;
-      if (customDateTime) {
-        checkOutTime = new Date(customDateTime);
-        dateStr = checkOutTime.toISOString().slice(0, 10);
-      } else {
-        // Use database timezone for consistency
-        const timeRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today');
-        checkOutTime = new Date(timeRes.rows[0].now);
-        dateStr = timeRes.rows[0].today;
-      }
+      // Use custom datetime if provided, otherwise use current time
+      const checkOutTime = customDateTime ? new Date(customDateTime) : new Date();
+      const dateStr = checkOutTime.toISOString().slice(0, 10);
 
       // Validate custom datetime if provided
       if (customDateTime) {
@@ -216,26 +154,14 @@ router.post(
       }
 
       const attId = existing.rows[0].attendance_id;
-      const existingCheckOut = existing.rows[0].check_out_time;
       
       // Validate that check-out time is after check-in time
       const checkInTime = new Date(existing.rows[0].check_in_time);
       if (checkOutTime <= checkInTime) {
-        // Allow overwrite to bypass this validation if explicitly requested
-        if (!(overwrite === true || overwrite === 'true')) {
-          return res.status(400).json({ 
-            message: 'Check-out time must be after check-in time. Use \'overwrite: true\' to force update.',
-            checkInTime: checkInTime.toLocaleString(),
-            checkOutTime: checkOutTime.toLocaleString()
-          });
-        }
-      }
-
-      // Check if checkout already exists and overwrite is not enabled
-      if (existingCheckOut && !(overwrite === true || overwrite === 'true')) {
         return res.status(400).json({ 
-          message: `Check-out already recorded for ${dateStr}. Use 'overwrite: true' to update the check-out time.`,
-          existingCheckOut: new Date(existingCheckOut).toLocaleString()
+          message: 'Check-out time must be after check-in time',
+          checkInTime: checkInTime.toLocaleString(),
+          checkOutTime: checkOutTime.toLocaleString()
         });
       }
 
@@ -246,12 +172,11 @@ router.post(
         [attId, checkOutTime]
       );
       
-      const isOverwrite = existingCheckOut ? ' (manual overwrite)' : '';
       const message = customDateTime ? 
-        `Check-out recorded for ${dateStr} at ${checkOutTime.toLocaleTimeString()}${isOverwrite}` : 
-        `Check-out recorded${isOverwrite}`;
+        `Check-out recorded for ${dateStr} at ${checkOutTime.toLocaleTimeString()}` : 
+        'Check-out recorded';
         
-      res.json({ message, attendance: result.rows[0], overwritten: !!existingCheckOut });
+      res.json({ message, attendance: result.rows[0] });
     } catch (error) {
       console.error('Check-out error:', error);
       res.status(500).json({ message: 'Server error' });
@@ -276,28 +201,18 @@ router.get('/', auth, async (req, res) => {
     
     // Apply date filters based on dateFilter parameter
     if (dateFilter === 'current_month') {
-      // Use database timezone for accurate month calculation
-      const monthQuery = await pool.query(`
-        SELECT 
-          DATE_TRUNC('month', CURRENT_DATE) as first_day,
-          (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day') as last_day
-      `);
-      const firstDay = monthQuery.rows[0].first_day;
-      const lastDay = monthQuery.rows[0].last_day;
-      params.push(firstDay);
-      params.push(lastDay);
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      params.push(firstDay.toISOString().split('T')[0]);
+      params.push(lastDay.toISOString().split('T')[0]);
       conditions.push(`a.date >= $${params.length - 1} AND a.date <= $${params.length}`);
     } else if (dateFilter === 'last_month') {
-      // Use database timezone for accurate month calculation
-      const monthQuery = await pool.query(`
-        SELECT 
-          DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as first_day,
-          (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day') as last_day
-      `);
-      const firstDay = monthQuery.rows[0].first_day;
-      const lastDay = monthQuery.rows[0].last_day;
-      params.push(firstDay);
-      params.push(lastDay);
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+      params.push(firstDay.toISOString().split('T')[0]);
+      params.push(lastDay.toISOString().split('T')[0]);
       conditions.push(`a.date >= $${params.length - 1} AND a.date <= $${params.length}`);
     } else {
       // Use manual date filters if provided
@@ -323,7 +238,7 @@ router.get('/', auth, async (req, res) => {
               a.attendance_notes, a.late_arrival_minutes, a.early_departure_minutes,
               a.break_time_duration, a.work_from_home,
               s.full_name, s.department, s.designation, s.work_status, s.manager_name,
-              s.project_code, s.supervisor_name, s.break_time_minutes, s.overtime_enabled, s.work_end_time, s.ot_threshold_minutes,
+              s.project_code, s.supervisor_name, s.break_time_minutes,
               CASE 
                 WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                   CASE 
@@ -353,19 +268,22 @@ router.get('/', auth, async (req, res) => {
                 ELSE NULL
               END as day_hours,
               CASE 
-                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL 
-                     AND s.overtime_enabled = TRUE THEN
-                  -- Step-function OT logic: OT only starts after work_end_time + threshold
+                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                   CASE 
-                    WHEN a.check_out_time::time > (
-                      (COALESCE(s.work_end_time, '17:45:00')::time + 
-                       INTERVAL '1 minute' * COALESCE(s.ot_threshold_minutes, 30))
-                    ) THEN
-                      -- Calculate OT from work_end_time (not from check-in or 8 hours)
-                      TO_CHAR(a.check_out_time::time - COALESCE(s.work_end_time, '17:45:00')::time, 'HH24:MI')
-                    ELSE '00:00'
+                    WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
+                      CASE 
+                        WHEN (a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) > INTERVAL '8 hours' THEN
+                          TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) - INTERVAL '8 hours', 'HH24:MI')
+                        ELSE '00:00'
+                      END
+                    ELSE
+                      CASE 
+                        WHEN (a.check_out_time - a.check_in_time) > INTERVAL '8 hours' THEN
+                          TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '8 hours', 'HH24:MI')
+                        ELSE '00:00'
+                      END
                   END
-                ELSE '00:00'
+                ELSE NULL
               END as overtime_hours
        FROM attendance a
        JOIN staff s ON s.staff_id = a.staff_id
@@ -373,17 +291,6 @@ router.get('/', auth, async (req, res) => {
        ORDER BY a.date DESC, a.check_in_time DESC`,
       params
     );
-    
-    // Debug: Log first row to check overtime_enabled field
-    if (result.rows.length > 0) {
-      console.log('Sample attendance record (first row):', {
-        staff_id: result.rows[0].staff_id,
-        full_name: result.rows[0].full_name,
-        overtime_enabled: result.rows[0].overtime_enabled,
-        has_overtime_enabled: 'overtime_enabled' in result.rows[0]
-      });
-    }
-    
     res.json(result.rows);
   } catch (error) {
     console.error('Get attendance error:', error);
@@ -391,9 +298,10 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+module.exports = router;
+
 // Face event: auto check-in/out with proper daily logic and face capture storage
-// Accessible by both admin and operator roles
-router.post('/face-event', [auth, requireAdminOrOperator, upload.single('faceImage'), body('staffId').notEmpty()], async (req, res) => {
+router.post('/face-event', [auth, requireAdmin, upload.single('faceImage'), body('staffId').notEmpty()], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -402,8 +310,8 @@ router.post('/face-event', [auth, requireAdminOrOperator, upload.single('faceIma
     const { staffId, confidenceScore } = req.body;
     const faceImage = req.file;
     
-    // Get current time and date using database timezone
-    const nowUpdateRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today, CURRENT_TIMESTAMP AS server_timestamp');
+    // Get current time and date
+    const nowUpdateRes = await pool.query('SELECT NOW() AS now, CURRENT_DATE AS today');
     const now = new Date(nowUpdateRes.rows[0].now);
     const today = nowUpdateRes.rows[0].today;
     
@@ -418,16 +326,7 @@ router.post('/face-event', [auth, requireAdminOrOperator, upload.single('faceIma
 
     if (existingRes.rows.length === 0) {
       // No attendance record for today - CREATE NEW CHECK-IN
-      let faceImagePath = null;
-      if (faceImage) {
-        // Extract the relative path from the full path
-        const year = now.getFullYear().toString();
-        const day = String(now.getDate()).padStart(2, '0');
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const monthFolder = `${month}${year}`;
-        const dateFolder = `${day}${month}${year}`;
-        faceImagePath = `uploads/attendance/${year}/${monthFolder}/${dateFolder}/${faceImage.filename}`;
-      }
+      const faceImagePath = faceImage ? `uploads/attendance/${faceImage.filename}` : null;
       const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
       
       const insertRes = await pool.query(
@@ -451,15 +350,7 @@ router.post('/face-event', [auth, requireAdminOrOperator, upload.single('faceIma
       // Has check-in but no check-out yet
       if (checkInTime && now.getTime() - checkInTime.getTime() >= fiveMinutesMs) {
         // More than 5 minutes since check-in - UPDATE CHECK-OUT
-        let faceImagePath = null;
-        if (faceImage) {
-          const year = now.getFullYear().toString();
-          const day = String(now.getDate()).padStart(2, '0');
-          const month = String(now.getMonth() + 1).padStart(2, '0');
-          const monthFolder = `${month}${year}`;
-          const dateFolder = `${day}${month}${year}`;
-          faceImagePath = `uploads/attendance/${year}/${monthFolder}/${dateFolder}/${faceImage.filename}`;
-        }
+        const faceImagePath = faceImage ? `uploads/attendance/${faceImage.filename}` : null;
         const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
         
         const upd = await pool.query(
@@ -477,15 +368,7 @@ router.post('/face-event', [auth, requireAdminOrOperator, upload.single('faceIma
 
     // Already has both check-in and check-out for today
     // Update check-out time to latest capture (last capture for the day)
-    let faceImagePath = null;
-    if (faceImage) {
-      const year = now.getFullYear().toString();
-      const day = String(now.getDate()).padStart(2, '0');
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const monthFolder = `${month}${year}`;
-      const dateFolder = `${day}${month}${year}`;
-      faceImagePath = `uploads/attendance/${year}/${monthFolder}/${dateFolder}/${faceImage.filename}`;
-    }
+    const faceImagePath = faceImage ? `uploads/attendance/${faceImage.filename}` : null;
     const confidence = confidenceScore ? parseFloat(confidenceScore) : null;
     
     const upd = await pool.query(
@@ -514,7 +397,7 @@ router.get('/export', auth, async (req, res) => {
              a.attendance_notes, a.late_arrival_minutes, a.early_departure_minutes,
              a.break_time_duration, a.work_from_home,
              s.full_name, s.department, s.designation, s.email, s.work_status,
-             s.manager_name, s.project_code, s.supervisor_name, s.break_time_minutes, s.overtime_enabled,
+             s.manager_name, s.project_code, s.supervisor_name, s.break_time_minutes,
              CASE 
                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                  CASE 
@@ -544,19 +427,22 @@ router.get('/export', auth, async (req, res) => {
                ELSE NULL
              END as day_hours,
              CASE 
-               WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL 
-                    AND s.overtime_enabled = TRUE THEN
-                 -- Step-function OT logic: OT only starts after work_end_time + threshold
+               WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                  CASE 
-                   WHEN a.check_out_time::time > (
-                     (COALESCE(s.work_end_time, '17:45:00')::time + 
-                      INTERVAL '1 minute' * COALESCE(s.ot_threshold_minutes, 30))
-                   ) THEN
-                     -- Calculate OT from work_end_time (not from check-in or 8 hours)
-                     TO_CHAR(a.check_out_time::time - COALESCE(s.work_end_time, '17:45:00')::time, 'HH24:MI')
-                   ELSE '00:00'
+                   WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
+                     CASE 
+                       WHEN (a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) > INTERVAL '8 hours' THEN
+                         TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '1 minute' * COALESCE(s.break_time_minutes, 30) - INTERVAL '8 hours', 'HH24:MI')
+                       ELSE '00:00'
+                     END
+                   ELSE
+                     CASE 
+                       WHEN (a.check_out_time - a.check_in_time) > INTERVAL '8 hours' THEN
+                         TO_CHAR((a.check_out_time - a.check_in_time) - INTERVAL '8 hours', 'HH24:MI')
+                       ELSE '00:00'
+                     END
                  END
-               ELSE '00:00'
+               ELSE NULL
              END as overtime_hours
       FROM attendance a
       JOIN staff s ON s.staff_id = a.staff_id
@@ -567,29 +453,19 @@ router.get('/export', auth, async (req, res) => {
     
     // Apply date filters
     if (dateFilter === 'current_month') {
-      // Use database timezone for accurate month calculation
-      const monthQuery = await pool.query(`
-        SELECT 
-          DATE_TRUNC('month', CURRENT_DATE) as first_day,
-          (DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day') as last_day
-      `);
-      const firstDay = monthQuery.rows[0].first_day;
-      const lastDay = monthQuery.rows[0].last_day;
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       conditions.push(`a.date >= $${params.length + 1} AND a.date <= $${params.length + 2}`);
-      params.push(firstDay);
-      params.push(lastDay);
+      params.push(firstDay.toISOString().split('T')[0]);
+      params.push(lastDay.toISOString().split('T')[0]);
     } else if (dateFilter === 'last_month') {
-      // Use database timezone for accurate month calculation
-      const monthQuery = await pool.query(`
-        SELECT 
-          DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') as first_day,
-          (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 day') as last_day
-      `);
-      const firstDay = monthQuery.rows[0].first_day;
-      const lastDay = monthQuery.rows[0].last_day;
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
       conditions.push(`a.date >= $${params.length + 1} AND a.date <= $${params.length + 2}`);
-      params.push(firstDay);
-      params.push(lastDay);
+      params.push(firstDay.toISOString().split('T')[0]);
+      params.push(lastDay.toISOString().split('T')[0]);
     } else if (startDate && endDate) {
       conditions.push(`a.date >= $${params.length + 1} AND a.date <= $${params.length + 2}`);
       params.push(startDate);
@@ -641,7 +517,6 @@ router.get('/export', auth, async (req, res) => {
         'Early Departure (min)': record.early_departure_minutes || 0,
         'Break Time (min)': record.break_time_duration || 0,
         'Work From Home': record.work_from_home ? 'Yes' : 'No',
-        'Overtime Enabled': record.overtime_enabled ? 'Yes' : 'No',
         'Attendance Notes': record.attendance_notes || '',
         'Status': record.status,
         'Check In Confidence': record.check_in_confidence_score ? `${(record.check_in_confidence_score * 100).toFixed(1)}%` : '',
@@ -653,7 +528,7 @@ router.get('/export', auth, async (req, res) => {
       
       // Create CSV string - handle empty data case
       if (csvData.length === 0) {
-        const headers = ['Date', 'Staff ID', 'Staff Name', 'Department', 'Designation', 'Email', 'Work Status', 'Manager Name', 'Supervisor Name', 'Project Code', 'Check In Time', 'Check Out Time', 'Total Hours', 'Day Hours', 'Overtime Hours', 'Late Arrival (min)', 'Early Departure (min)', 'Break Time (min)', 'Work From Home', 'Overtime Enabled', 'Attendance Notes', 'Status', 'Check In Confidence', 'Check Out Confidence', 'Has Check In Photo', 'Has Check Out Photo', 'Created At'];
+        const headers = ['Date', 'Staff ID', 'Staff Name', 'Department', 'Designation', 'Email', 'Work Status', 'Manager Name', 'Supervisor Name', 'Project Code', 'Check In Time', 'Check Out Time', 'Total Hours', 'Day Hours', 'Overtime Hours', 'Late Arrival (min)', 'Early Departure (min)', 'Break Time (min)', 'Work From Home', 'Attendance Notes', 'Status', 'Check In Confidence', 'Check Out Confidence', 'Has Check In Photo', 'Has Check Out Photo', 'Created At'];
         const csvContent = headers.join(',') + '\n';
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
@@ -675,87 +550,7 @@ router.get('/export', auth, async (req, res) => {
       }
       
     } else {
-      // Generate Excel with Summary Statistics
-      
-      // Helper function to convert HH:MM to decimal hours
-      const hhmmToDecimal = (hhmm) => {
-        if (!hhmm || hhmm === '00:00') return 0;
-        const [hours, minutes] = hhmm.split(':').map(Number);
-        return hours + (minutes / 60);
-      };
-      
-      // Helper function to convert decimal hours to HH:MM format
-      const decimalToHHMM = (decimalHours) => {
-        if (!decimalHours || decimalHours === 0) return '00:00';
-        const hours = Math.floor(decimalHours);
-        const minutes = Math.round((decimalHours - hours) * 60);
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-      };
-      
-      // Calculate overall summary statistics
-      const overallSummary = {
-        totalDaysWorked: attendanceData.filter(a => a.total_hours).length,
-        totalHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.total_hours), 0),
-        totalRegularHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.day_hours), 0),
-        totalOvertimeHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.overtime_hours), 0),
-        totalLateMinutes: attendanceData.reduce((sum, a) => sum + (parseInt(a.late_arrival_minutes) || 0), 0),
-        totalWFHDays: attendanceData.filter(a => a.work_from_home).length
-      };
-      
-      // Calculate individual staff summaries
-      const staffSummaries = {};
-      attendanceData.forEach(record => {
-        if (!staffSummaries[record.staff_id]) {
-          staffSummaries[record.staff_id] = {
-            staffId: record.staff_id,
-            staffName: record.full_name,
-            department: record.department,
-            designation: record.designation,
-            workStatus: record.work_status || '',
-            daysWorked: 0,
-            totalHours: 0,
-            regularHours: 0,
-            overtimeHours: 0,
-            lateMinutes: 0,
-            wfhDays: 0
-          };
-        }
-        
-        const summary = staffSummaries[record.staff_id];
-        if (record.total_hours) summary.daysWorked++;
-        summary.totalHours += hhmmToDecimal(record.total_hours);
-        summary.regularHours += hhmmToDecimal(record.day_hours);
-        summary.overtimeHours += hhmmToDecimal(record.overtime_hours);
-        summary.lateMinutes += parseInt(record.late_arrival_minutes) || 0;
-        if (record.work_from_home) summary.wfhDays++;
-      });
-      
-      // Convert staff summaries object to array
-      const staffSummaryArray = Object.values(staffSummaries).map(summary => ({
-        'Staff ID': summary.staffId,
-        'Staff Name': summary.staffName,
-        'Department': summary.department,
-        'Designation': summary.designation,
-        'Work Status': summary.workStatus,
-        'Days Worked': summary.daysWorked,
-        'Total Hours': decimalToHHMM(summary.totalHours),
-        'Regular Hours': decimalToHHMM(summary.regularHours),
-        'Overtime Hours': decimalToHHMM(summary.overtimeHours),
-        'Late Minutes': summary.lateMinutes,
-        'Work From Home Days': summary.wfhDays
-      }));
-      
-      // Create overall summary data for Excel
-      const overallSummaryData = [
-        { 'Metric': 'Total Days Worked', 'Value': overallSummary.totalDaysWorked },
-        { 'Metric': 'Total Hours', 'Value': decimalToHHMM(overallSummary.totalHours) },
-        { 'Metric': 'Total Regular Hours', 'Value': decimalToHHMM(overallSummary.totalRegularHours) },
-        { 'Metric': 'Total Overtime Hours', 'Value': decimalToHHMM(overallSummary.totalOvertimeHours) },
-        { 'Metric': 'Total Late Minutes', 'Value': overallSummary.totalLateMinutes },
-        { 'Metric': 'Total Work From Home Days', 'Value': overallSummary.totalWFHDays }
-      ];
-      
-      // Create detailed attendance data
+      // Generate Excel
       const excelData = attendanceData.map(record => ({
         'Date': record.date,
         'Staff ID': record.staff_id,
@@ -776,7 +571,6 @@ router.get('/export', auth, async (req, res) => {
         'Early Departure (min)': record.early_departure_minutes || 0,
         'Break Time (min)': record.break_time_duration || 0,
         'Work From Home': record.work_from_home ? 'Yes' : 'No',
-        'Overtime Enabled': record.overtime_enabled ? 'Yes' : 'No',
         'Attendance Notes': record.attendance_notes || '',
         'Status': record.status,
         'Check In Confidence': record.check_in_confidence_score ? `${(record.check_in_confidence_score * 100).toFixed(1)}%` : '',
@@ -787,19 +581,9 @@ router.get('/export', auth, async (req, res) => {
       }));
       
       try {
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
         const workbook = XLSX.utils.book_new();
-        
-        // Create "Overall Summary" sheet
-        const overallSummarySheet = XLSX.utils.json_to_sheet(overallSummaryData);
-        XLSX.utils.book_append_sheet(workbook, overallSummarySheet, 'Overall Summary');
-        
-        // Create "Staff Summary" sheet
-        const staffSummarySheet = XLSX.utils.json_to_sheet(staffSummaryArray);
-        XLSX.utils.book_append_sheet(workbook, staffSummarySheet, 'Staff Summary');
-        
-        // Create "Detailed Attendance" sheet
-        const detailedSheet = XLSX.utils.json_to_sheet(excelData);
-        XLSX.utils.book_append_sheet(workbook, detailedSheet, 'Detailed Attendance');
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Report');
         
         const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
         
@@ -818,4 +602,4 @@ router.get('/export', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+

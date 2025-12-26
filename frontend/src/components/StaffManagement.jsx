@@ -205,6 +205,7 @@ export default function StaffManagement() {
               <TableCell>Work Status</TableCell>
               <TableCell>Manager</TableCell>
               <TableCell>WFH</TableCell>
+              <TableCell>Overtime</TableCell>
               <TableCell>Working Hours</TableCell>
               <TableCell>User Account</TableCell>
               <TableCell>Status</TableCell>
@@ -234,6 +235,14 @@ export default function StaffManagement() {
                     label={m.work_from_home_enabled ? 'Yes' : 'No'} 
                     color={m.work_from_home_enabled ? 'success' : 'default'}
                     variant={m.work_from_home_enabled ? 'filled' : 'outlined'}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Chip 
+                    size="small" 
+                    label={m.overtime_enabled ? 'Yes' : 'No'} 
+                    color={m.overtime_enabled ? 'success' : 'default'}
+                    variant={m.overtime_enabled ? 'filled' : 'outlined'}
                   />
                 </TableCell>
                 <TableCell>
