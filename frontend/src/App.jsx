@@ -19,6 +19,8 @@ import { AuthProvider } from './context/AuthContext'
 import AttendanceReport from './components/AttendanceReport'
 import AdminFaceAttendance from './components/AdminFaceAttendance'
 import ErrorBoundary from './components/ErrorBoundary'
+import GlobalSettings from './components/GlobalSettings'
+import AttendanceAndLeaveActions from './components/AttendanceAndLeaveActions'
 
 const queryClient = new QueryClient()
 
@@ -57,6 +59,8 @@ export default function App() {
                     path="/attendance/face"
                     element={<OperatorRoute component={AdminFaceAttendance} />}
                   />
+                  <Route path="/settings" element={<AdminRoute component={GlobalSettings} />} />
+                  <Route path="/attendance-actions" element={<AdminRoute component={AttendanceAndLeaveActions} />} />
                   <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
               </Box>

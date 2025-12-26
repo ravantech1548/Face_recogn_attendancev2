@@ -131,7 +131,7 @@ router.post(
              SET check_in_time = $2, attendance_notes = $3, work_from_home = $4
              WHERE attendance_id = $1 RETURNING *`,
             [attendanceId, checkInTime, finalNotes, isWorkFromHome]
-          );
+          )
           
           const message = customDateTime ? 
             `Check-in time updated for ${dateStr} to ${checkInTime.toLocaleTimeString()} (manual overwrite)` : 
@@ -159,6 +159,172 @@ router.post(
       res.status(201).json({ message, attendance: result.rows[0] });
     } catch (error) {
       console.error('Check-in error:', error);
+      res.status(500).json({ message: 'Server error' });
+    }
+  }
+);
+
+// Record leave entry (Admin only - separate from attendance actions)
+router.post(
+  '/leave',
+  [auth, requireAdmin, body('staffId').notEmpty().withMessage('staffId is required'), 
+   body('leaveType').isIn(['casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave']).withMessage('Valid leaveType is required'),
+   body('leaveStartDate').notEmpty().withMessage('leaveStartDate is required'),
+   body('leaveEndDate').notEmpty().withMessage('leaveEndDate is required')],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+      const { staffId, leaveType, leaveStartDate, leaveEndDate, notes, overwrite } = req.body;
+      
+      // Validate dates
+      const startDate = new Date(leaveStartDate);
+      const endDate = new Date(leaveEndDate);
+      
+      if (isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid leave start date format' });
+      }
+      
+      if (isNaN(endDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid leave end date format' });
+      }
+      
+      if (endDate < startDate) {
+        return res.status(400).json({ message: 'Leave end date cannot be before start date' });
+      }
+      
+      // Get date range settings from global_settings
+      const settingsResult = await pool.query(
+        `SELECT setting_key, setting_value FROM global_settings 
+         WHERE setting_key IN ('leave_max_past_months', 'leave_max_future_months')`
+      );
+      
+      let maxPastMonths = 6; // Default value
+      let maxFutureMonths = 6; // Default value
+      
+      settingsResult.rows.forEach(row => {
+        if (row.setting_key === 'leave_max_past_months') {
+          maxPastMonths = parseInt(row.setting_value) || 6;
+        } else if (row.setting_key === 'leave_max_future_months') {
+          maxFutureMonths = parseInt(row.setting_value) || 6;
+        }
+      });
+      
+      // Validate date range against configured limits
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+      
+      // Calculate date boundaries
+      const maxPastDate = new Date(now);
+      maxPastDate.setMonth(maxPastDate.getMonth() - maxPastMonths);
+      const maxPastDateStr = maxPastDate.toISOString().slice(0, 10);
+      
+      const maxFutureDate = new Date(now);
+      maxFutureDate.setMonth(maxFutureDate.getMonth() + maxFutureMonths);
+      const maxFutureDateStr = maxFutureDate.toISOString().slice(0, 10);
+      
+      const startDateStr = startDate.toISOString().slice(0, 10);
+      const endDateStr = endDate.toISOString().slice(0, 10);
+      
+      if (startDateStr < maxPastDateStr) {
+        return res.status(400).json({ 
+          message: `Cannot record leave more than ${maxPastMonths} months in the past` 
+        });
+      }
+      
+      if (endDateStr > maxFutureDateStr) {
+        return res.status(400).json({ 
+          message: `Cannot record leave more than ${maxFutureMonths} months in the future` 
+        });
+      }
+      
+      // Generate all dates in the range
+      const datesInRange = [];
+      const currentDate = new Date(startDate);
+      const finalEndDate = new Date(endDate);
+      
+      while (currentDate <= finalEndDate) {
+        datesInRange.push(new Date(currentDate).toISOString().slice(0, 10));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      const attendanceNotes = notes || leaveType.replace(/_/g, ' ').toUpperCase();
+      const createdRecords = [];
+      const updatedRecords = [];
+      const skippedRecords = [];
+      
+      // Process each date in the range
+      for (const dateStr of datesInRange) {
+        const checkInTime = new Date(dateStr + 'T00:00:00');
+        const checkOutTime = new Date(dateStr + 'T00:00:00');
+        
+        // Check if already has attendance record for this date
+        const existing = await pool.query(
+          'SELECT attendance_id, status FROM attendance WHERE staff_id = $1 AND date = $2',
+          [staffId, dateStr]
+        );
+        
+        if (existing.rows.length > 0) {
+          // Check if it's already a leave
+          const existingStatus = existing.rows[0].status;
+          const leaveTypes = ['casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave'];
+          const isExistingLeave = leaveTypes.includes(existingStatus);
+          
+          if (!(overwrite === true || overwrite === 'true')) {
+            if (isExistingLeave) {
+              skippedRecords.push({ date: dateStr, reason: 'Leave already exists' });
+              continue;
+            } else {
+              skippedRecords.push({ date: dateStr, reason: 'Attendance already exists (use overwrite to convert)' });
+              continue;
+            }
+          }
+          
+          // Update existing record
+          const attendanceId = existing.rows[0].attendance_id;
+          const result = await pool.query(
+            `UPDATE attendance 
+             SET check_in_time = $2, check_out_time = $3, status = $4, attendance_notes = $5, work_from_home = FALSE
+             WHERE attendance_id = $1 RETURNING *`,
+            [attendanceId, checkInTime, checkOutTime, leaveType, attendanceNotes]
+          );
+          
+          updatedRecords.push(result.rows[0]);
+        } else {
+          // Create new leave record
+          const result = await pool.query(
+            `INSERT INTO attendance (staff_id, check_in_time, check_out_time, date, status, attendance_notes, work_from_home)
+             VALUES ($1, $2, $3, $4, $5, $6, FALSE) RETURNING *`,
+            [staffId, checkInTime, checkOutTime, dateStr, leaveType, attendanceNotes]
+          );
+          
+          createdRecords.push(result.rows[0]);
+        }
+      }
+      
+      // Build response message
+      const totalDays = datesInRange.length;
+      const createdCount = createdRecords.length;
+      const updatedCount = updatedRecords.length;
+      const skippedCount = skippedRecords.length;
+      
+      let message = `Leave recorded for ${totalDays} day(s) (${leaveStartDate} to ${leaveEndDate})`;
+      if (createdCount > 0) message += ` - ${createdCount} created`;
+      if (updatedCount > 0) message += `, ${updatedCount} updated`;
+      if (skippedCount > 0) message += `, ${skippedCount} skipped`;
+      
+      res.status(201).json({ 
+        message, 
+        recordsCreated: createdCount,
+        recordsUpdated: updatedCount,
+        recordsSkipped: skippedCount,
+        totalDays,
+        attendance: [...createdRecords, ...updatedRecords]
+      });
+    } catch (error) {
+      console.error('Leave entry error:', error);
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -217,17 +383,27 @@ router.post(
 
       const attId = existing.rows[0].attendance_id;
       const existingCheckOut = existing.rows[0].check_out_time;
+      const existingStatus = existing.rows[0].status;
       
-      // Validate that check-out time is after check-in time
-      const checkInTime = new Date(existing.rows[0].check_in_time);
-      if (checkOutTime <= checkInTime) {
-        // Allow overwrite to bypass this validation if explicitly requested
-        if (!(overwrite === true || overwrite === 'true')) {
-          return res.status(400).json({ 
-            message: 'Check-out time must be after check-in time. Use \'overwrite: true\' to force update.',
-            checkInTime: checkInTime.toLocaleString(),
-            checkOutTime: checkOutTime.toLocaleString()
-          });
+      // Check if this is a leave type - if so, set checkout to 00:00:00
+      const leaveTypes = ['casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave']
+      const isLeaveType = existingStatus && leaveTypes.includes(existingStatus)
+      
+      if (isLeaveType) {
+        // For leave types, checkout time should be 00:00:00
+        checkOutTime = new Date(dateStr + 'T00:00:00');
+      } else {
+        // Validate that check-out time is after check-in time (skip for leave types)
+        const checkInTime = new Date(existing.rows[0].check_in_time);
+        if (checkOutTime <= checkInTime) {
+          // Allow overwrite to bypass this validation if explicitly requested
+          if (!(overwrite === true || overwrite === 'true')) {
+            return res.status(400).json({ 
+              message: 'Check-out time must be after check-in time. Use \'overwrite: true\' to force update.',
+              checkInTime: checkInTime.toLocaleString(),
+              checkOutTime: checkOutTime.toLocaleString()
+            });
+          }
         }
       }
 
@@ -325,6 +501,10 @@ router.get('/', auth, async (req, res) => {
               s.full_name, s.department, s.designation, s.work_status, s.manager_name,
               s.project_code, s.supervisor_name, s.break_time_minutes, s.overtime_enabled, s.work_end_time, s.ot_threshold_minutes,
               CASE 
+                -- Leave days (status is a leave type or both times are 00:00:00) should have 0 hours
+                WHEN a.status IN ('casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave') 
+                     OR (a.check_in_time::time = '00:00:00'::time AND a.check_out_time::time = '00:00:00'::time) THEN
+                  '00:00'
                 WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                   CASE 
                     WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
@@ -335,6 +515,10 @@ router.get('/', auth, async (req, res) => {
                 ELSE NULL
               END as total_hours,
               CASE 
+                -- Leave days should have 0 day hours
+                WHEN a.status IN ('casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave') 
+                     OR (a.check_in_time::time = '00:00:00'::time AND a.check_out_time::time = '00:00:00'::time) THEN
+                  '00:00'
                 WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                   CASE 
                     WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
@@ -353,6 +537,10 @@ router.get('/', auth, async (req, res) => {
                 ELSE NULL
               END as day_hours,
               CASE 
+                -- Leave days should have 0 overtime hours
+                WHEN a.status IN ('casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave') 
+                     OR (a.check_in_time::time = '00:00:00'::time AND a.check_out_time::time = '00:00:00'::time) THEN
+                  '00:00'
                 WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL 
                      AND s.overtime_enabled = TRUE THEN
                   -- Step-function OT logic: OT only starts after work_end_time + threshold
@@ -516,6 +704,10 @@ router.get('/export', auth, async (req, res) => {
              s.full_name, s.department, s.designation, s.email, s.work_status,
              s.manager_name, s.project_code, s.supervisor_name, s.break_time_minutes, s.overtime_enabled,
              CASE 
+               -- Leave days should have 0 hours
+               WHEN a.status IN ('casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave') 
+                    OR (a.check_in_time::time = '00:00:00'::time AND a.check_out_time::time = '00:00:00'::time) THEN
+                 '00:00'
                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                  CASE 
                    WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
@@ -526,6 +718,10 @@ router.get('/export', auth, async (req, res) => {
                ELSE NULL
              END as total_hours,
              CASE 
+               -- Leave days should have 0 day hours
+               WHEN a.status IN ('casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave') 
+                    OR (a.check_in_time::time = '00:00:00'::time AND a.check_out_time::time = '00:00:00'::time) THEN
+                 '00:00'
                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL THEN
                  CASE 
                    WHEN (a.check_out_time - a.check_in_time) > INTERVAL '4 hours 30 minutes' THEN
@@ -544,6 +740,10 @@ router.get('/export', auth, async (req, res) => {
                ELSE NULL
              END as day_hours,
              CASE 
+               -- Leave days should have 0 overtime hours
+               WHEN a.status IN ('casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave') 
+                    OR (a.check_in_time::time = '00:00:00'::time AND a.check_out_time::time = '00:00:00'::time) THEN
+                 '00:00'
                WHEN a.check_in_time IS NOT NULL AND a.check_out_time IS NOT NULL 
                     AND s.overtime_enabled = TRUE THEN
                  -- Step-function OT logic: OT only starts after work_end_time + threshold
@@ -694,7 +894,14 @@ router.get('/export', auth, async (req, res) => {
       
       // Calculate overall summary statistics
       const overallSummary = {
-        totalDaysWorked: attendanceData.filter(a => a.total_hours).length,
+        totalDaysWorked: attendanceData.filter(a => {
+          // Exclude leave days from days worked count
+          // Leave days have status as leave types or total_hours as '00:00'
+          const isLeaveStatus = a.status && ['casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave'].includes(a.status);
+          const isZeroHours = a.total_hours === '00:00' || !a.total_hours;
+          // Count as worked if total_hours exists, is not '00:00', and status is not a leave type
+          return a.total_hours && !isZeroHours && !isLeaveStatus;
+        }).length,
         totalHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.total_hours), 0),
         totalRegularHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.day_hours), 0),
         totalOvertimeHours: attendanceData.reduce((sum, a) => sum + hhmmToDecimal(a.overtime_hours), 0),
@@ -722,7 +929,14 @@ router.get('/export', auth, async (req, res) => {
         }
         
         const summary = staffSummaries[record.staff_id];
-        if (record.total_hours) summary.daysWorked++;
+        // Exclude leave days from days worked count
+        // Leave days have status as leave types or total_hours as '00:00'
+        const isLeaveStatus = record.status && ['casual_leave', 'medical_leave', 'unpaid_leave', 'hospitalised_leave'].includes(record.status);
+        const isZeroHours = record.total_hours === '00:00' || !record.total_hours;
+        // Count as worked if total_hours exists, is not '00:00', and status is not a leave type
+        if (record.total_hours && !isZeroHours && !isLeaveStatus) {
+          summary.daysWorked++;
+        }
         summary.totalHours += hhmmToDecimal(record.total_hours);
         summary.regularHours += hhmmToDecimal(record.day_hours);
         summary.overtimeHours += hhmmToDecimal(record.overtime_hours);
