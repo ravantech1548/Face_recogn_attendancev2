@@ -814,6 +814,7 @@ export default function AttendanceReport() {
                 <TableCell>Early Departure</TableCell>
                 <TableCell>Break Time</TableCell>
                 <TableCell>WFH</TableCell>
+                <TableCell>Overtime Enabled</TableCell>
                 <TableCell>Notes</TableCell>
                 <TableCell>Face Captures</TableCell>
                 <TableCell>Status</TableCell>
@@ -821,7 +822,7 @@ export default function AttendanceReport() {
             </TableHead>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={17}>Loading...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={18}>Loading...</TableCell></TableRow>
               ) : attendance?.length ? (
                 attendance.map((a) => (
                   <TableRow key={`${a.attendance_id}`}>
@@ -909,6 +910,14 @@ export default function AttendanceReport() {
                       />
                     </TableCell>
                     <TableCell>
+                      <Chip 
+                        label={a.overtime_enabled === true || a.overtime_enabled === 'true' ? 'Yes' : 'No'} 
+                        size="small" 
+                        color={a.overtime_enabled === true || a.overtime_enabled === 'true' ? 'success' : 'default'}
+                        variant={a.overtime_enabled === true || a.overtime_enabled === 'true' ? 'filled' : 'outlined'}
+                      />
+                    </TableCell>
+                    <TableCell>
                       {a.attendance_notes ? (
                         <Tooltip title={a.attendance_notes}>
                           <Typography variant="caption" sx={{ 
@@ -952,7 +961,7 @@ export default function AttendanceReport() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={17}>No records</TableCell></TableRow>
+                <TableRow><TableCell colSpan={18}>No records</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

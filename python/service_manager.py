@@ -408,15 +408,55 @@ class ServiceManager:
     def check_frontend_connectivity(self):
         """Check if frontend can connect to backend services"""
         try:
-            # Test backend connection
-            backend_response = requests.get(f"http://127.0.0.1:5000/api/health", timeout=5)
-            if backend_response.status_code != 200:
+            backend_ok = False
+            
+            # Try HTTP first (non-SSL backend)
+            try:
+                backend_response = requests.get("http://127.0.0.1:5000/api/health", timeout=5)
+                backend_ok = backend_response.status_code == 200
+                if backend_ok:
+                    logger.debug("Backend health reachable over HTTP")
+            except Exception as http_error:
+                logger.debug(f"Backend HTTP health check failed: {http_error}")
+            
+            # Fallback to HTTPS (self-signed certs, so skip verification)
+            if not backend_ok:
+                try:
+                    backend_response = requests.get(
+                        "https://127.0.0.1:5000/api/health",
+                        timeout=5,
+                        verify=False
+                    )
+                    backend_ok = backend_response.status_code == 200
+                    if backend_ok:
+                        logger.debug("Backend health reachable over HTTPS")
+                except Exception as https_error:
+                    logger.debug(f"Backend HTTPS health check failed: {https_error}")
+            
+            if not backend_ok:
                 logger.warning("Frontend cannot connect to backend")
                 return False
             
-            # Test recognizer connection
-            recognizer_response = requests.get(f"https://127.0.0.1:8001/health", timeout=5, verify=False)
-            if recognizer_response.status_code != 200:
+            # Test recognizer connection (already HTTPS, but allow fallback to HTTP just in case)
+            recognizer_ok = False
+            try:
+                recognizer_response = requests.get("https://127.0.0.1:8001/health", timeout=5, verify=False)
+                recognizer_ok = recognizer_response.status_code == 200
+                if recognizer_ok:
+                    logger.debug("Recognizer health reachable over HTTPS")
+            except Exception as https_error:
+                logger.debug(f"Recognizer HTTPS health check failed: {https_error}")
+            
+            if not recognizer_ok:
+                try:
+                    recognizer_response = requests.get("http://127.0.0.1:8001/health", timeout=5)
+                    recognizer_ok = recognizer_response.status_code == 200
+                    if recognizer_ok:
+                        logger.debug("Recognizer health reachable over HTTP")
+                except Exception as http_error:
+                    logger.debug(f"Recognizer HTTP health check failed: {http_error}")
+            
+            if not recognizer_ok:
                 logger.warning("Frontend cannot connect to recognizer service")
                 return False
             
