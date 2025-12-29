@@ -17,6 +17,7 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
+  FormHelperText,
   Divider
 } from '@mui/material'
 import axios from 'axios'
@@ -43,8 +44,10 @@ export default function AddStaff() {
   const [manager, setManager] = useState('')
   const [workFromHomeEnabled, setWorkFromHomeEnabled] = useState(false)
   const [onDutyEnabled, setOnDutyEnabled] = useState(true)
+  const [overtimeEnabled, setOvertimeEnabled] = useState(false)
   const [workStartTime, setWorkStartTime] = useState('09:15')
   const [workEndTime, setWorkEndTime] = useState('17:45')
+  const [otThresholdMinutes, setOtThresholdMinutes] = useState(30)
   const [breakTimeMinutes, setBreakTimeMinutes] = useState(30)
   const [supervisorName, setSupervisorName] = useState('')
   const [projectCode, setProjectCode] = useState('')
@@ -69,8 +72,10 @@ export default function AddStaff() {
       setManager(staffData.manager || '')
       setWorkFromHomeEnabled(staffData.work_from_home_enabled || false)
       setOnDutyEnabled(staffData.on_duty_enabled !== false) // Default to true if not set
+      setOvertimeEnabled(staffData.overtime_enabled || false)
       setWorkStartTime(staffData.work_start_time ? staffData.work_start_time.slice(0, 5) : '09:15')
       setWorkEndTime(staffData.work_end_time ? staffData.work_end_time.slice(0, 5) : '17:45')
+      setOtThresholdMinutes(staffData.ot_threshold_minutes || 30)
       setBreakTimeMinutes(staffData.break_time_minutes || 30)
       setSupervisorName(staffData.supervisor_name || '')
       setProjectCode(staffData.project_code || '')
@@ -115,8 +120,10 @@ export default function AddStaff() {
     formData.append('manager', manager)
     formData.append('workFromHomeEnabled', workFromHomeEnabled)
     formData.append('onDutyEnabled', onDutyEnabled)
+    formData.append('overtimeEnabled', overtimeEnabled)
     formData.append('workStartTime', workStartTime + ':00')
     formData.append('workEndTime', workEndTime + ':00')
+    formData.append('otThresholdMinutes', otThresholdMinutes)
     formData.append('breakTimeMinutes', breakTimeMinutes)
     formData.append('supervisorName', supervisorName)
     formData.append('projectCode', projectCode)
@@ -250,6 +257,19 @@ export default function AddStaff() {
             </Grid>
             
             <Grid item xs={12} sm={6}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={overtimeEnabled}
+                    onChange={(e) => setOvertimeEnabled(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Overtime Enabled"
+              />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
                 <InputLabel>Break Time</InputLabel>
                 <Select
@@ -283,6 +303,28 @@ export default function AddStaff() {
                 onChange={(e) => setWorkEndTime(e.target.value)}
                 InputLabelProps={{ shrink: true }}
               />
+            </Grid>
+            
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth disabled={!overtimeEnabled}>
+                <InputLabel>OT Threshold (Minutes)</InputLabel>
+                <Select
+                  value={otThresholdMinutes}
+                  label="OT Threshold (Minutes)"
+                  onChange={(e) => setOtThresholdMinutes(e.target.value)}
+                >
+                  <MenuItem value={0}>0 minutes (OT starts immediately)</MenuItem>
+                  <MenuItem value={15}>15 minutes</MenuItem>
+                  <MenuItem value={30}>30 minutes</MenuItem>
+                  <MenuItem value={45}>45 minutes</MenuItem>
+                  <MenuItem value={60}>1 hour</MenuItem>
+                </Select>
+                <FormHelperText>
+                  {overtimeEnabled 
+                    ? 'Grace period before OT starts after work end time' 
+                    : 'Enable Overtime to configure threshold'}
+                </FormHelperText>
+              </FormControl>
             </Grid>
             
             <Grid item xs={12}>

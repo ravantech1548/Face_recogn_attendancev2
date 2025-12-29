@@ -199,12 +199,8 @@ export default function StaffManagement() {
             <TableRow>
               <TableCell>Staff ID</TableCell>
               <TableCell>Full Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Designation</TableCell>
-              <TableCell>Department</TableCell>
-              <TableCell>Work Status</TableCell>
-              <TableCell>Manager</TableCell>
               <TableCell>WFH</TableCell>
+              <TableCell>Overtime</TableCell>
               <TableCell>Working Hours</TableCell>
               <TableCell>User Account</TableCell>
               <TableCell>Status</TableCell>
@@ -216,24 +212,20 @@ export default function StaffManagement() {
               <TableRow key={m.staff_id} hover>
                 <TableCell>{m.staff_id}</TableCell>
                 <TableCell>{m.full_name}</TableCell>
-                <TableCell>{m.email}</TableCell>
-                <TableCell>{m.designation}</TableCell>
-                <TableCell>{m.department}</TableCell>
-                <TableCell>
-                  <Chip 
-                    size="small" 
-                    label={m.work_status || 'Full-time'} 
-                    color={m.work_status === 'Full-time' ? 'success' : m.work_status === 'Part-time' ? 'warning' : 'info'}
-                    variant="outlined"
-                  />
-                </TableCell>
-                <TableCell>{m.manager || '-'}</TableCell>
                 <TableCell>
                   <Chip 
                     size="small" 
                     label={m.work_from_home_enabled ? 'Yes' : 'No'} 
                     color={m.work_from_home_enabled ? 'success' : 'default'}
                     variant={m.work_from_home_enabled ? 'filled' : 'outlined'}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Chip 
+                    size="small" 
+                    label={m.overtime_enabled ? 'Yes' : 'No'} 
+                    color={m.overtime_enabled ? 'success' : 'default'}
+                    variant={m.overtime_enabled ? 'filled' : 'outlined'}
                   />
                 </TableCell>
                 <TableCell>

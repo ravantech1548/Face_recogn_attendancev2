@@ -1,10 +1,32 @@
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const pool = require('../config/database');
+const { getDBTimezone } = require('../config/timezone');
 
 async function initDb() {
   const schemaPath = path.join(__dirname, '../../sql/schema.sql');
   try {
+    // Get timezone from .env configuration
+    const timezone = getDBTimezone();
+    
+    // Escape single quotes in timezone name for safety
+    const escapedTimezone = timezone.replace(/'/g, "''");
+    
+    // Set timezone to configured timezone from .env
+    try {
+      // Try to set database timezone (may require superuser privileges)
+      // ALTER DATABASE doesn't support parameterized queries, so we use string interpolation
+      await pool.query(`ALTER DATABASE face_recognition_attendance SET timezone = '${escapedTimezone}'`);
+      console.log(`[initDb] Database timezone set to: ${timezone} (from .env)`);
+    } catch (error) {
+      // If we can't alter database, just set session timezone
+      console.log(`[initDb] Could not set database timezone (may require superuser), using session timezone: ${timezone} (from .env)`);
+    }
+    
+    // Always set session timezone (SET command doesn't support parameterized queries)
+    await pool.query(`SET timezone = '${escapedTimezone}'`);
+    
     if (!fs.existsSync(schemaPath)) {
       console.warn('[initDb] Schema file not found:', schemaPath);
       return;

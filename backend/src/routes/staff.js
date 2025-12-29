@@ -40,7 +40,7 @@ router.get('/', auth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT s.staff_id, s.full_name, s.email, s.designation, s.department, s.is_active, s.created_at,
-              s.work_status, s.manager, s.work_from_home_enabled, s.on_duty_enabled, s.work_start_time, s.work_end_time,
+              s.work_status, s.manager, s.work_from_home_enabled, s.on_duty_enabled, s.overtime_enabled, s.work_start_time, s.work_end_time, s.ot_threshold_minutes,
               s.break_time_minutes, s.supervisor_name, s.project_code,
               u.user_id, u.username, u.role
        FROM staff s
@@ -59,7 +59,7 @@ router.get('/:staffId', auth, async (req, res) => {
     const { staffId } = req.params;
     const result = await pool.query(
       `SELECT staff_id, full_name, email, designation, department, face_image_path, is_active,
-              work_status, manager, work_from_home_enabled, on_duty_enabled, work_start_time, work_end_time,
+              work_status, manager, work_from_home_enabled, on_duty_enabled, overtime_enabled, work_start_time, work_end_time, ot_threshold_minutes,
               break_time_minutes, supervisor_name, project_code
        FROM staff WHERE staff_id = $1`,
       [staffId]
@@ -101,8 +101,10 @@ router.post(
         manager,
         workFromHomeEnabled,
         onDutyEnabled,
+        overtimeEnabled,
         workStartTime,
         workEndTime,
+        otThresholdMinutes,
         breakTimeMinutes,
         supervisorName,
         projectCode
@@ -121,11 +123,11 @@ router.post(
 
       const result = await pool.query(
         `INSERT INTO staff (staff_id, full_name, email, designation, department, face_image_path,
-                           work_status, manager, work_from_home_enabled, on_duty_enabled, work_start_time, work_end_time,
+                           work_status, manager, work_from_home_enabled, on_duty_enabled, overtime_enabled, work_start_time, work_end_time, ot_threshold_minutes,
                            break_time_minutes, supervisor_name, project_code)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING staff_id, full_name, email, designation, department, face_image_path, created_at,
-                   work_status, manager, work_from_home_enabled, on_duty_enabled, work_start_time, work_end_time,
+                   work_status, manager, work_from_home_enabled, on_duty_enabled, overtime_enabled, work_start_time, work_end_time, ot_threshold_minutes,
                    break_time_minutes, supervisor_name, project_code`,
         [
           staffId, 
@@ -138,8 +140,10 @@ router.post(
           manager || 'TBD',
           workFromHomeEnabled === 'true' || workFromHomeEnabled === true,
           onDutyEnabled === 'true' || onDutyEnabled === true || onDutyEnabled === undefined,
+          overtimeEnabled === 'true' || overtimeEnabled === true,
           workStartTime || '09:15:00',
           workEndTime || '17:45:00',
+          otThresholdMinutes || 30,
           breakTimeMinutes || 30,
           supervisorName || 'TBD',
           projectCode || department
@@ -166,8 +170,10 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
       manager,
       workFromHomeEnabled,
       onDutyEnabled,
+      overtimeEnabled,
       workStartTime,
       workEndTime,
+      otThresholdMinutes,
       breakTimeMinutes,
       supervisorName,
       projectCode
@@ -191,12 +197,14 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
         manager = $6,
         work_from_home_enabled = $7,
         on_duty_enabled = $8,
-        work_start_time = $9,
-        work_end_time = $10,
-        break_time_minutes = $11,
-        supervisor_name = $12,
-        project_code = $13,
-        updated_at = CURRENT_TIMESTAMP`;
+        overtime_enabled = $9,
+        work_start_time = $10,
+        work_end_time = $11,
+        ot_threshold_minutes = $12,
+        break_time_minutes = $13,
+        supervisor_name = $14,
+        project_code = $15,
+        updated_at = NOW()`;
     
     const values = [
       fullName, 
@@ -207,20 +215,22 @@ router.put('/:staffId', [auth, requireAdmin, upload.single('faceImage')], async 
       manager || 'TBD',
       workFromHomeEnabled === 'true' || workFromHomeEnabled === true,
       onDutyEnabled === 'true' || onDutyEnabled === true || onDutyEnabled === undefined,
+      overtimeEnabled === 'true' || overtimeEnabled === true,
       workStartTime || '09:15:00',
       workEndTime || '17:45:00',
+      otThresholdMinutes || 30,
       breakTimeMinutes || 30,
       supervisorName || 'TBD',
       projectCode || department
     ];
     
     if (faceImagePath) {
-      query += ', face_image_path = $14';
+      query += ', face_image_path = $16';
       values.push(faceImagePath);
-      query += ` WHERE staff_id = $15 RETURNING *`;
+      query += ` WHERE staff_id = $17 RETURNING *`;
       values.push(staffId);
     } else {
-      query += ` WHERE staff_id = $14 RETURNING *`;
+      query += ` WHERE staff_id = $16 RETURNING *`;
       values.push(staffId);
     }
 
